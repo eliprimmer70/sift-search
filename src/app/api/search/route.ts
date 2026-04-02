@@ -3,7 +3,6 @@ import { NextResponse } from 'next/server'
 const cache = new Map<string, { data: unknown; timestamp: number }>()
 const CACHE_TTL = 5 * 60 * 1000
 
-// Built-in knowledge panels
 const KNOWLEDGE_PANELS = [
   {
     id: 'sift',
@@ -115,12 +114,33 @@ export async function GET(request: Request) {
   }
 
   try {
-    // 1. Get Wikipedia content for knowledge panel
+    // 1. Add direct links to popular sites as results
+    const popularSites = [
+      { name: 'YouTube', domain: 'youtube.com', searchParam: 'search_query', snippet: 'Watch videos about' },
+      { name: 'Reddit', domain: 'reddit.com', searchParam: 'q', snippet: 'Discussions about' },
+      { name: 'Twitter/X', domain: 'twitter.com', searchParam: 'q', snippet: 'See what people say about' },
+      { name: 'Wikipedia', domain: 'wikipedia.org', searchParam: 'search', snippet: 'Encyclopedia article about' },
+      { name: 'Amazon', domain: 'amazon.com', searchParam: 'k', snippet: 'Products related to' },
+      { name: 'GitHub', domain: 'github.com', searchParam: 'q', snippet: 'Code and projects for' },
+      { name: 'Quora', domain: 'quora.com', searchParam: 'q', snippet: 'Questions and answers about' },
+      { name: 'News', domain: 'news.google.com', searchParam: 'q', snippet: 'Latest news about' },
+      { name: 'Stack Overflow', domain: 'stackoverflow.com', searchParam: 'q', snippet: 'Technical questions about' },
+      { name: 'TikTok', domain: 'tiktok.com', searchParam: 'q', snippet: 'Videos about' },
+    ]
+    
+    for (const site of popularSites) {
+      results.push({
+        title: `${query} - ${site.name}`,
+        link: `https://www.${site.domain}/search?${site.searchParam}=${encodeURIComponent(query)}`,
+        snippet: `${site.snippet} ${query}`
+      })
+    }
+
+    // 2. Get Wikipedia content for knowledge panel
     if (!isAdult) {
       try {
         const encodedQuery = encodeURIComponent(query)
         
-        // Get page summary
         const summaryRes = await fetch(
           `https://en.wikipedia.org/api/rest_v1/page/summary/${encodedQuery}`,
           { headers: { 'User-Agent': 'Sift/1.0' } }
@@ -136,7 +156,6 @@ export async function GET(request: Request) {
             facts: {}
           }
           
-          // Set as featured snippet
           featuredSnippet = {
             title: summaryData.title,
             link: summaryData.content_urls?.desktop?.page || `https://en.wikipedia.org/wiki/${encodedQuery}`,
@@ -145,25 +164,14 @@ export async function GET(request: Request) {
         }
       } catch {}
 
-      // Get full Wikipedia search results
       try {
         const wikiSearchRes = await fetch(
-          `https://en.wikipedia.org/w/api.php?action=query&list=search&srsearch=${encodeURIComponent(query)}&format=json&origin=*&srlimit=20`,
+          `https://en.wikipedia.org/w/api.php?action=query&list=search&srsearch=${encodeURIComponent(query)}&format=json&origin=*&srlimit=10`,
           { headers: { 'User-Agent': 'Sift/1.0' } }
         )
         const wikiSearchData = await wikiSearchRes.json()
         
         if (wikiSearchData.query?.search) {
-          for (const item of wikiSearchData.query.search) {
-            const cleanSnippet = item.snippet?.replace(/<[^>]*>/g, '').replace(/&quot;/g, '"').replace(/&amp;/g, '&') || ''
-            results.push({
-              title: item.title,
-              link: `https://en.wikipedia.org/wiki/${encodeURIComponent(item.title.replace(/ /g, '_'))}`,
-              snippet: cleanSnippet.substring(0, 250)
-            })
-          }
-          
-          // Generate related questions from search titles
           relatedQuestions = wikiSearchData.query.search.slice(0, 5).map((item: { title: string }) => 
             `What is ${item.title}?`
           )
@@ -171,7 +179,7 @@ export async function GET(request: Request) {
       } catch {}
     }
 
-    // 2. Brave Search
+    // 3. Brave Search (if API key available)
     const braveKey = process.env.BRAVE_API_KEY
     if (braveKey) {
       try {
@@ -204,7 +212,6 @@ export async function GET(request: Request) {
           }
         }
         
-        // Get knowledge panel from Brave
         if (!wikiKnowledge && braveData.knowledge_panel) {
           const kp = braveData.knowledge_panel
           wikiKnowledge = {
@@ -213,61 +220,45 @@ export async function GET(request: Request) {
             image: kp.graph_metadata?.image,
             facts: {}
           }
-          if (kp.attributes) {
-            for (const [key, value] of Object.entries(kp.attributes)) {
-              if (typeof value === 'string') {
-                wikiKnowledge.facts[key] = value
-              }
-            }
-          }
         }
       } catch {}
     }
 
-    // 3. DuckDuckGo Lite
-    if (results.length < 5) {
-      try {
-        const ddgRes = await fetch(
-          `https://lite.duckduckgo.com/lite/?q=${encodeURIComponent(query)}`,
-          { headers: { 'User-Agent': 'Mozilla/5.0' } }
-        )
-        const ddgText = await ddgRes.text()
+    // 4. Fallback: Try scraping Bing results
+    try {
+      const bingRes = await fetch(
+        `https://www.bing.com/search?q=${encodeURIComponent(query)}&format=rss`,
+        { headers: { 'User-Agent': 'Mozilla/5.0' } }
+      )
+      
+      if (bingRes.ok) {
+        const bingText = await bingRes.text()
+        // Simple parsing - look for URLs
+        const urlMatches = bingText.match(/https?:\/\/[^\s<>"{}|\\^`\[\]]+/gi) || []
+        const uniqueUrls = [...new Set(urlMatches)].filter(u => 
+          u.includes('.com') || u.includes('.org') || u.includes('.net') ||
+          u.includes('.io') || u.includes('.co') || u.includes('.gov') ||
+          u.includes('.edu')
+        ).slice(0, 20)
         
-        const links = ddgText.match(/<a[^>]+href="(https:\/\/[^"]+)"[^>]*>[^<]*<\/a>/gi) || []
-        const snippets = ddgText.match(/<span[^>]+class="result__snippet"[^>]*>([\s\S]*?)<\/span>/gi) || []
-        
-        for (let i = 0; i < Math.min(links.length, snippets.length, 15); i++) {
-          const linkMatch = links[i].match(/href="(https:\/\/[^"]+)"/)
-          const titleMatch = links[i].match(/>([^<]+)<\/a>/)
-          const snippetText = snippets[i]?.replace(/<[^>]*>/g, '').trim() || ''
-          
-          if (linkMatch && titleMatch) {
-            const link = linkMatch[1]
-            const exists = results.some(x => x.link === link)
-            if (!exists && !link.includes('duckduckgo')) {
+        for (const url of uniqueUrls) {
+          try {
+            const urlObj = new URL(url)
+            const exists = results.some(x => x.link === url)
+            if (!exists && !url.includes('bing.com') && !url.includes('microsoft.com')) {
               results.push({
-                title: titleMatch[1].trim(),
-                link,
-                snippet: snippetText.substring(0, 200)
+                title: urlObj.hostname.replace('www.', ''),
+                link: url,
+                snippet: `Visit ${urlObj.hostname.replace('www.', '')}`
               })
             }
-          }
+          } catch {}
         }
-      } catch {}
-    }
+      }
+    } catch {}
 
-    // Fallback if no results
-    if (results.length === 0) {
-      results.push(
-        { title: `${query} on YouTube`, link: `https://youtube.com/results?search_query=${encodeURIComponent(query)}`, snippet: `Watch videos about ${query}` },
-        { title: `${query} on Reddit`, link: `https://reddit.com/search/?q=${encodeURIComponent(query)}`, snippet: `Discussions about ${query}` },
-        { title: `${query} on Twitter`, link: `https://twitter.com/search?q=${encodeURIComponent(query)}`, snippet: `See what people say about ${query}` },
-        { title: `${query} on Wikipedia`, link: `https://en.wikipedia.org/w/index.php?search=${encodeURIComponent(query)}`, snippet: `Encyclopedia article about ${query}` }
-      )
-    }
-
-    // Get images from Wikipedia
-    if (images.length === 0) {
+    // 5. Get images from Wikipedia
+    if (images.length === 0 && !isAdult) {
       try {
         const imgRes = await fetch(
           `https://en.wikipedia.org/w/api.php?action=query&titles=${encodeURIComponent(query)}&prop=pageimages&format=json&origin=*&pithumbsize=500`,
@@ -292,7 +283,7 @@ export async function GET(request: Request) {
       for (let i = 0; i < 20; i++) {
         images.push({
           title: `${query} ${i + 1}`,
-          link: `https://google.com/search?q=${encodeURIComponent(query)} images`,
+          link: `https://www.google.com/search?q=${encodeURIComponent(query)} images`,
           thumbnail: `https://picsum.photos/seed/${query.replace(/\s+/g, '')}${i}/400/400`
         })
       }
@@ -312,7 +303,7 @@ export async function GET(request: Request) {
 
     // AI Summary
     let aiSummary = null
-    const snippets = dedupedResults.slice(0, 3).map(r => r.snippet).filter(Boolean).join(' ')
+    const snippets = dedupedResults.slice(0, 5).map(r => r.snippet).filter(Boolean).join(' ')
     const aiPrompt = `About "${query}": ${snippets || wikiKnowledge?.description || ''}. Give a 2-3 sentence helpful answer. Sound natural.`
 
     if (process.env.GEMINI_API_KEY) {
