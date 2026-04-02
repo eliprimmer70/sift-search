@@ -540,14 +540,37 @@ export default function Search() {
                           <button
                             key={i}
                             onClick={() => loadArticle(article)}
-                            className="bg-zinc-900/50 border border-zinc-800 rounded-xl p-4 text-left hover:bg-zinc-900 transition-colors group"
+                            className="bg-zinc-900/50 border border-zinc-800 rounded-xl overflow-hidden text-left hover:bg-zinc-900 transition-colors group"
                           >
-                            {article.image && (
-                              <img src={article.image} alt="" className="w-full h-40 object-cover rounded-lg mb-4 group-hover:opacity-90 transition-opacity" />
-                            )}
-                            <h4 className="text-white font-medium mb-2 line-clamp-2">{article.title}</h4>
-                            <p className="text-zinc-500 text-xs mb-2">{article.source} • {article.date ? new Date(article.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : ''}</p>
-                            <p className="text-zinc-400 text-sm line-clamp-3">{article.snippet}</p>
+                            <div className="relative h-40 bg-zinc-800">
+                              {article.image ? (
+                                <img 
+                                  src={article.image} 
+                                  alt="" 
+                                  className="w-full h-full object-cover"
+                                  onError={(e) => {
+                                    const target = e.target as HTMLImageElement
+                                    target.style.display = 'none'
+                                    target.parentElement!.classList.add('flex', 'items-center', 'justify-center')
+                                    target.parentElement!.innerHTML = `<svg class="w-12 h-12 text-zinc-600" fill="currentColor" viewBox="0 0 24 24"><path d="M19 5v14H5V5h14m0-2H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm-4.86 8.86l-3 3.87L9 13.14 6 17h12l-3.86-5.14z"/></svg>`
+                                  }}
+                                />
+                              ) : (
+                                <div className="w-full h-full flex items-center justify-center bg-gradient-to-br from-zinc-700 to-zinc-800">
+                                  <svg className="w-12 h-12 text-zinc-600" fill="currentColor" viewBox="0 0 24 24">
+                                    <path d="M19 5v14H5V5h14m0-2H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm-4.86 8.86l-3 3.87L9 13.14 6 17h12l-3.86-5.14z"/>
+                                  </svg>
+                                </div>
+                              )}
+                              <div className="absolute bottom-2 left-2">
+                                <span className="bg-black/70 text-white text-xs px-2 py-1 rounded">{article.source}</span>
+                              </div>
+                            </div>
+                            <div className="p-4">
+                              <h4 className="text-white font-medium mb-2 line-clamp-2">{article.title}</h4>
+                              <p className="text-zinc-500 text-xs mb-2">{article.date ? new Date(article.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : ''}</p>
+                              <p className="text-zinc-400 text-sm line-clamp-3">{article.snippet}</p>
+                            </div>
                           </button>
                         ))}
                       </div>
