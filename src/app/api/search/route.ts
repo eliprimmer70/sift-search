@@ -9,52 +9,44 @@ export async function GET(request: Request) {
   }
 
   try {
-    // Try Bing search
-    const searchUrl = `https://www.bing.com/search?q=${encodeURIComponent(query)}`
-    const response = await fetch(searchUrl, {
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
-      }
-    })
-    const html = await response.text()
-
-    // Parse Bing results
     const results: { title: string; link: string; snippet: string }[] = []
+    const images: { title: string; link: string; thumbnail: string }[] = []
     
-    // Bing result pattern
-    const bingRegex = /<li class="b_algo"[\s\S]*?<h2[^>]*>([\s\S]*?)<\/h2>[\s\S]*?<div class="b_caption"[\s\S]*?<p>([\s\S]*?)<\/p>/g
+    // Use DuckDuckGo's API
+    const ddgUrl = `https://api.duckduckgo.com/?q=${encodeURIComponent(query)}&format=json&no_html=1`
     
-    let match
-    while ((match = bingRegex.exec(html)) !== null && results.length < 10) {
-      const titleMatch = match[1].match(/<a[^>]*>([^<]+)<\/a>/)
-      const urlMatch = match[1].match(/href="([^"]+)"/)
-      const snippet = match[2].replace(/<[^>]+>/g, '').trim()
+    try {
+      const ddgResponse = await fetch(ddgUrl, {
+        headers: { 'User-Agent': 'Mozilla/5.0' }
+      })
+      const ddgData = await ddgResponse.json()
       
-      if (titleMatch && urlMatch) {
-        const title = titleMatch[1].replace(/<[^>]+>/g, '').trim()
-        const link = urlMatch[1]
-        
-        if (title && link && !link.includes('microsoft') && !link.includes('bing')) {
-          results.push({ title, link, snippet })
+      // Add related topics as results
+      if (ddgData.RelatedTopics) {
+        for (const topic of ddgData.RelatedTopics.slice(0, 10)) {
+          if (topic.Text && topic.FirstURL) {
+            results.push({
+              title: topic.Text.substring(0, 100),
+              link: topic.FirstURL,
+              snippet: topic.Text.substring(0, 200)
+            })
+          }
         }
       }
-    }
-
-    // Fallback: simpler regex for Bing
-    if (results.length === 0) {
-      const simpleTitleRegex = /<h2[^>]*>[\s\S]*?<a[^>]*href="([^"]+)"[^>]*>([^<]+)<\/a>/g
-      while ((match = simpleTitleRegex.exec(html)) !== null && results.length < 10) {
-        const link = match[1]
-        const title = match[2].replace(/<[^>]+>/g, '').trim()
-        
-        if (title && link && link.startsWith('http') && !link.includes('bing.com') && !link.includes('microsoft')) {
-          results.push({ title, link, snippet: '' })
-        }
+      
+      // Add abstract if available
+      if (ddgData.AbstractText && ddgData.AbstractURL) {
+        results.unshift({
+          title: ddgData.Heading || query,
+          link: ddgData.AbstractURL,
+          snippet: ddgData.AbstractText.substring(0, 300)
+        })
       }
+    } catch {
+      console.log('DuckDuckGo API failed')
     }
 
     // Get images from Picsum
-    const images: { title: string; link: string; thumbnail: string }[] = []
     try {
       const picsumResponse = await fetch(`https://picsum.photos/v2/list?limit=12`)
       const picsumData = await picsumResponse.json()
