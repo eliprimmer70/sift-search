@@ -1,5 +1,64 @@
 import { NextResponse } from 'next/server'
 
+const cache = new Map<string, { data: unknown; timestamp: number }>()
+const CACHE_TTL = 5 * 60 * 1000
+
+// Built-in knowledge panels
+const KNOWLEDGE_PANELS = [
+  {
+    id: 'sift',
+    keyword: 'sift',
+    title: 'Sift',
+    subtitle: 'Web Search Engine',
+    description: 'Sift is a modern web search engine that provides fast, accurate search results with AI-powered summaries. Built as an alternative to traditional search engines, Sift offers a clean interface with knowledge panels, image search, and intelligent answers.',
+    image: '',
+    facts: ['Type: Search Engine', 'Founded: 2024', 'Features: AI Summaries, Knowledge Panels, Image Search']
+  }
+]
+
+const ADULT_KEYWORDS = ['sex', 'porn', 'xxx', 'nude', 'naked', 'adult', 'erotic', 'fuck', 'shit', 'piss', 'cunt', 'dick', 'cock', 'pussy', 'ass', 'boob', 'nipple']
+
+function isAdultQuery(query: string): boolean {
+  const lower = query.toLowerCase()
+  return ADULT_KEYWORDS.some(kw => lower.includes(kw))
+}
+
+function parseQueryForRichResults(query: string) {
+  const q = query.toLowerCase().trim()
+  
+  if (q === 'time' || q.match(/^(what('s| is) the )?time$/i)) {
+    const now = new Date()
+    return { type: 'time', data: { time: now.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }), timezone: Intl.DateTimeFormat().resolvedOptions().timeZone } }
+  }
+  
+  if (q === 'date' || q === 'today' || q.match(/^(what('s| is) the )?date$/i)) {
+    const now = new Date()
+    return { type: 'date', data: { date: now.toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' }) } }
+  }
+  
+  const calcMatch = q.match(/^(\d+)\s*([+\-*/^])\s*(\d+)$/)
+  if (calcMatch) {
+    const a = parseFloat(calcMatch[1]), b = parseFloat(calcMatch[3])
+    let result: number
+    switch (calcMatch[2]) {
+      case '+': result = a + b; break
+      case '-': result = a - b; break
+      case '*': result = a * b; break
+      case '/': result = b !== 0 ? a / b : Infinity; break
+      case '^': result = Math.pow(a, b); break
+      default: return null
+    }
+    return { type: 'calculator', data: { expression: `${a} ${calcMatch[2]} ${b}`, result } }
+  }
+  
+  const currencyMatch = q.match(/^(\d+(?:\.\d+)?)\s*(\w{3})\s+(?:to|in|into)\s+(\w{3})$/i)
+  if (currencyMatch) {
+    return { type: 'currency', data: { amount: currencyMatch[1], from: currencyMatch[2].toUpperCase(), to: currencyMatch[3].toUpperCase() } }
+  }
+  
+  return null
+}
+
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url)
   const query = searchParams.get('q')
@@ -8,318 +67,298 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: 'Query required' }, { status: 400 })
   }
 
+  const cacheKey = `search:${query.toLowerCase()}`
+  const cached = cache.get(cacheKey)
+  if (cached && Date.now() - cached.timestamp < CACHE_TTL) {
+    return NextResponse.json(cached.data)
+  }
+
+  const queryLower = query.toLowerCase()
+  const isAdult = isAdultQuery(query)
+  
+  const matchedPanel = !isAdult ? KNOWLEDGE_PANELS.find(p => queryLower.includes(p.keyword) || p.keyword.includes(queryLower)) : null
+  const richResult = parseQueryForRichResults(query)
+
+  const results: { title: string; link: string; snippet: string; favicon?: string; domain?: string }[] = []
+  const images: { title: string; link: string; thumbnail: string }[] = []
+  let featuredSnippet: { title: string; link: string; snippet: string } | null = null
+  let relatedQuestions: string[] = []
+  let wikiKnowledge: { title: string; description: string; image?: string; facts: Record<string, string> } | null = null
+
+  // Handle rich results
+  if (richResult) {
+    let richAnswer = null
+    
+    if (richResult.type === 'time') {
+      richAnswer = { type: 'time', data: richResult.data }
+    } else if (richResult.type === 'date') {
+      richAnswer = { type: 'date', data: richResult.data }
+    } else if (richResult.type === 'calculator') {
+      richAnswer = { type: 'calculator', data: richResult.data }
+    } else if (richResult.type === 'currency') {
+      try {
+        const from = richResult.data.from as string
+        const to = richResult.data.to as string
+        const rateRes = await fetch('https://api.exchangerate-api.com/v4/latest/' + from)
+        const rateData = await rateRes.json()
+        const rate = rateData.rates?.[to]
+        if (rate) {
+          const amount = parseFloat(richResult.data.amount as string)
+          richAnswer = { type: 'currency', data: { ...richResult.data, rate, result: (amount * rate).toFixed(2) } }
+        }
+      } catch {}
+    }
+    
+    if (richAnswer) {
+      return NextResponse.json({ results: [], images: [], aiSummary: null, knowledgePanel: matchedPanel || null, richResult: richAnswer })
+    }
+  }
+
   try {
-    const results: { title: string; link: string; snippet: string }[] = []
-    const images: { title: string; link: string; thumbnail: string }[] = []
-    
-    // DuckDuckGo Instant Answer API
-    const ddgUrl = `https://api.duckduckgo.com/?q=${encodeURIComponent(query)}&format=json&no_html=1&skip_disambig=1`
-    
-    try {
-      const ddgResponse = await fetch(ddgUrl, {
-        headers: { 'User-Agent': 'Mozilla/5.0 (compatible; Sift/1.0)' }
-      })
-      const ddgData = await ddgResponse.json()
-      
-      // Add abstract/definition if available
-      if (ddgData.AbstractText && ddgData.AbstractURL) {
-        results.push({
-          title: ddgData.Heading || query,
-          link: ddgData.AbstractURL,
-          snippet: ddgData.AbstractText.substring(0, 300)
-        })
-      }
-      
-      // Add "More at" results
-      if (ddgData.RelatedResults) {
-        for (const res of ddgData.RelatedResults.slice(0, 5)) {
-          if (res.Text && res.FirstURL) {
-            results.push({
-              title: res.Text.substring(0, 100),
-              link: res.FirstURL,
-              snippet: res.Text.substring(0, 200)
-            })
+    // 1. Get Wikipedia content for knowledge panel
+    if (!isAdult) {
+      try {
+        const encodedQuery = encodeURIComponent(query)
+        
+        // Get page summary
+        const summaryRes = await fetch(
+          `https://en.wikipedia.org/api/rest_v1/page/summary/${encodedQuery}`,
+          { headers: { 'User-Agent': 'Sift/1.0' } }
+        )
+        
+        if (summaryRes.ok) {
+          const summaryData = await summaryRes.json()
+          
+          wikiKnowledge = {
+            title: summaryData.title,
+            description: summaryData.extract || summaryData.description || '',
+            image: summaryData.thumbnail?.source || summaryData.originalimage?.source,
+            facts: {}
+          }
+          
+          // Set as featured snippet
+          featuredSnippet = {
+            title: summaryData.title,
+            link: summaryData.content_urls?.desktop?.page || `https://en.wikipedia.org/wiki/${encodedQuery}`,
+            snippet: summaryData.extract || ''
           }
         }
-      }
-      
-      // Add related topics
-      if (ddgData.RelatedTopics) {
-        for (const topic of ddgData.RelatedTopics.slice(0, 10)) {
-          if (topic.Text && topic.FirstURL) {
+      } catch {}
+
+      // Get full Wikipedia search results
+      try {
+        const wikiSearchRes = await fetch(
+          `https://en.wikipedia.org/w/api.php?action=query&list=search&srsearch=${encodeURIComponent(query)}&format=json&origin=*&srlimit=20`,
+          { headers: { 'User-Agent': 'Sift/1.0' } }
+        )
+        const wikiSearchData = await wikiSearchRes.json()
+        
+        if (wikiSearchData.query?.search) {
+          for (const item of wikiSearchData.query.search) {
+            const cleanSnippet = item.snippet?.replace(/<[^>]*>/g, '').replace(/&quot;/g, '"').replace(/&amp;/g, '&') || ''
             results.push({
-              title: topic.Text.substring(0, 100),
-              link: topic.FirstURL,
-              snippet: topic.Text.substring(0, 200)
+              title: item.title,
+              link: `https://en.wikipedia.org/wiki/${encodeURIComponent(item.title.replace(/ /g, '_'))}`,
+              snippet: cleanSnippet.substring(0, 250)
             })
           }
+          
+          // Generate related questions from search titles
+          relatedQuestions = wikiSearchData.query.search.slice(0, 5).map((item: { title: string }) => 
+            `What is ${item.title}?`
+          )
         }
-      }
-    } catch {
-      console.log('DuckDuckGo API failed')
+      } catch {}
     }
 
-    // If no results, try Bing search fallback via serpdog free API
-    if (results.length === 0) {
+    // 2. Brave Search
+    const braveKey = process.env.BRAVE_API_KEY
+    if (braveKey) {
       try {
-        const serpApiKey = process.env.SERP_API_KEY
-        if (serpApiKey) {
-          const serpRes = await fetch(
-            `https://api.serpdog.io/search?api_key=${serpApiKey}&q=${encodeURIComponent(query)}&num=10`
-          )
-          const serpData = await serpRes.json()
-          if (serpData.results) {
-            for (const r of serpData.results) {
+        const braveRes = await fetch(
+          `https://api.search.brave.com/res/v1/web/search?q=${encodeURIComponent(query)}&count=20`,
+          { headers: { 'X-Subscription-Token': braveKey, 'Accept': 'application/json' } }
+        )
+        const braveData = await braveRes.json()
+        
+        if (braveData.web?.results) {
+          for (const r of braveData.web.results) {
+            const exists = results.some(x => x.link === r.url)
+            if (!exists) {
               results.push({
                 title: r.title,
-                link: r.link,
-                snippet: r.snippet || r.description
+                link: r.url,
+                snippet: r.description || ''
               })
             }
           }
         }
-      } catch {}
-
-      // Final fallback: generate results from Wikipedia search
-      if (results.length === 0) {
-        try {
-          const wikiRes = await fetch(
-            `https://en.wikipedia.org/w/api.php?action=opensearch&search=${encodeURIComponent(query)}&limit=10&format=json`,
-            { headers: { 'User-Agent': 'Sift/1.0' } }
-          )
-          const wikiData = await wikiRes.json()
-          if (wikiData[1] && wikiData[1].length > 0) {
-            for (let i = 0; i < wikiData[1].length; i++) {
-              results.push({
-                title: wikiData[1][i],
-                link: wikiData[3][i],
-                snippet: `Learn more about ${wikiData[1][i]} on Wikipedia`
-              })
-            }
-          }
-        } catch {}
-      }
-
-      // Ultimate fallback: create search URLs for major sites
-      if (results.length === 0) {
-        const searchQuery = encodeURIComponent(query)
-        results.push(
-          {
-            title: `Search for "${query}" on Google`,
-            link: `https://www.google.com/search?q=${searchQuery}`,
-            snippet: `Find information about ${query} on Google`
-          },
-          {
-            title: `Search for "${query}" on Bing`,
-            link: `https://www.bing.com/search?q=${searchQuery}`,
-            snippet: `Find information about ${query} on Bing`
-          },
-          {
-            title: `Search for "${query}" on Wikipedia`,
-            link: `https://en.wikipedia.org/w/index.php?search=${searchQuery}`,
-            snippet: `Find information about ${query} on Wikipedia`
-          },
-          {
-            title: `Search for "${query}" on YouTube`,
-            link: `https://www.youtube.com/results?search_query=${searchQuery}`,
-            snippet: `Watch videos about ${query} on YouTube`
-          },
-          {
-            title: `Search for "${query}" on Reddit`,
-            link: `https://www.reddit.com/search/?q=${searchQuery}`,
-            snippet: `Find discussions about ${query} on Reddit`
-          },
-          {
-            title: `Search for "${query}" on Twitter`,
-            link: `https://twitter.com/search?q=${searchQuery}`,
-            snippet: `See what people are saying about ${query}`
-          },
-          {
-            title: `Search for "${query}" on GitHub`,
-            link: `https://github.com/search?q=${searchQuery}`,
-            snippet: `Find code and projects related to ${query} on GitHub`
-          },
-          {
-            title: `Search for "${query}" on Amazon`,
-            link: `https://www.amazon.com/s?k=${searchQuery}`,
-            snippet: `Find products related to ${query} on Amazon`
-          },
-          {
-            title: `Search for "${query}" on Quora`,
-            link: `https://www.quora.com/search?q=${searchQuery}`,
-            snippet: `Find answers and discussions about ${query} on Quora`
-          },
-          {
-            title: `Search for "${query}" on Stack Overflow`,
-            link: `https://stackoverflow.com/search?q=${searchQuery}`,
-            snippet: `Find technical answers about ${query} on Stack Overflow`
-          }
-        )
-      }
-    }
-
-    // Get images - always show Picsum as fallback
-    try {
-      const picsumResponse = await fetch(`https://picsum.photos/v2/list?limit=15`)
-      const picsumData = await picsumResponse.json()
-      
-      // Try to get relevant images first
-      let gotRelevant = false
-      
-      // Try Unsplash source API
-      try {
-        const unsplashRes = await fetch(`https://source.unsplash.com/featured/?${encodeURIComponent(query)}/12`, {
-          redirect: 'follow'
-        })
-        if (unsplashRes.ok) {
-          for (let i = 0; i < 12; i++) {
+        
+        if (braveData.images?.results) {
+          for (const img of braveData.images.results.slice(0, 30)) {
             images.push({
-              title: `Image ${i + 1}`,
-              link: `https://unsplash.com/s/photos/${encodeURIComponent(query)}`,
-              thumbnail: `https://source.unsplash.com/featured/300x300?${encodeURIComponent(query)}&sig=${i}`
+              title: img.title || query,
+              link: img.url,
+              thumbnail: img.thumbnail?.url || img.url
             })
           }
-          gotRelevant = true
+        }
+        
+        // Get knowledge panel from Brave
+        if (!wikiKnowledge && braveData.knowledge_panel) {
+          const kp = braveData.knowledge_panel
+          wikiKnowledge = {
+            title: kp.graph_metadata?.title || query,
+            description: kp.description || '',
+            image: kp.graph_metadata?.image,
+            facts: {}
+          }
+          if (kp.attributes) {
+            for (const [key, value] of Object.entries(kp.attributes)) {
+              if (typeof value === 'string') {
+                wikiKnowledge.facts[key] = value
+              }
+            }
+          }
         }
       } catch {}
+    }
 
-      // Fallback to Picsum with search query
-      if (!gotRelevant) {
-        for (const img of picsumData.slice(0, 15)) {
-          images.push({
-            title: `Photo by ${img.author} - ${query}`,
-            link: img.url,
-            thumbnail: `https://picsum.photos/id/${img.id}/300/300`
-          })
+    // 3. DuckDuckGo Lite
+    if (results.length < 5) {
+      try {
+        const ddgRes = await fetch(
+          `https://lite.duckduckgo.com/lite/?q=${encodeURIComponent(query)}`,
+          { headers: { 'User-Agent': 'Mozilla/5.0' } }
+        )
+        const ddgText = await ddgRes.text()
+        
+        const links = ddgText.match(/<a[^>]+href="(https:\/\/[^"]+)"[^>]*>[^<]*<\/a>/gi) || []
+        const snippets = ddgText.match(/<span[^>]+class="result__snippet"[^>]*>([\s\S]*?)<\/span>/gi) || []
+        
+        for (let i = 0; i < Math.min(links.length, snippets.length, 15); i++) {
+          const linkMatch = links[i].match(/href="(https:\/\/[^"]+)"/)
+          const titleMatch = links[i].match(/>([^<]+)<\/a>/)
+          const snippetText = snippets[i]?.replace(/<[^>]*>/g, '').trim() || ''
+          
+          if (linkMatch && titleMatch) {
+            const link = linkMatch[1]
+            const exists = results.some(x => x.link === link)
+            if (!exists && !link.includes('duckduckgo')) {
+              results.push({
+                title: titleMatch[1].trim(),
+                link,
+                snippet: snippetText.substring(0, 200)
+              })
+            }
+          }
         }
-      }
-    } catch {
-      // Ultimate fallback for images
-      for (let i = 0; i < 12; i++) {
+      } catch {}
+    }
+
+    // Fallback if no results
+    if (results.length === 0) {
+      results.push(
+        { title: `${query} on YouTube`, link: `https://youtube.com/results?search_query=${encodeURIComponent(query)}`, snippet: `Watch videos about ${query}` },
+        { title: `${query} on Reddit`, link: `https://reddit.com/search/?q=${encodeURIComponent(query)}`, snippet: `Discussions about ${query}` },
+        { title: `${query} on Twitter`, link: `https://twitter.com/search?q=${encodeURIComponent(query)}`, snippet: `See what people say about ${query}` },
+        { title: `${query} on Wikipedia`, link: `https://en.wikipedia.org/w/index.php?search=${encodeURIComponent(query)}`, snippet: `Encyclopedia article about ${query}` }
+      )
+    }
+
+    // Get images from Wikipedia
+    if (images.length === 0) {
+      try {
+        const imgRes = await fetch(
+          `https://en.wikipedia.org/w/api.php?action=query&titles=${encodeURIComponent(query)}&prop=pageimages&format=json&origin=*&pithumbsize=500`,
+          { headers: { 'User-Agent': 'Sift/1.0' } }
+        )
+        const imgData = await imgRes.json()
+        const pages = imgData.query?.pages || {}
+        
+        for (const pageId of Object.keys(pages)) {
+          if (pages[pageId].thumbnail && images.length < 20) {
+            images.push({
+              title: pages[pageId].title,
+              link: `https://en.wikipedia.org/wiki/${encodeURIComponent(pages[pageId].title.replace(/ /g, '_'))}`,
+              thumbnail: pages[pageId].thumbnail.source
+            })
+          }
+        }
+      } catch {}
+    }
+
+    if (images.length === 0) {
+      for (let i = 0; i < 20; i++) {
         images.push({
-          title: `Image ${i + 1} - ${query}`,
-          link: '#',
-          thumbnail: `https://picsum.photos/300/300?random=${i}&text=${encodeURIComponent(query)}`
+          title: `${query} ${i + 1}`,
+          link: `https://google.com/search?q=${encodeURIComponent(query)} images`,
+          thumbnail: `https://picsum.photos/seed/${query.replace(/\s+/g, '')}${i}/400/400`
         })
       }
     }
+
+    // Add favicons
+    const seen = new Set<string>()
+    const dedupedResults = results.filter(r => {
+      if (seen.has(r.link)) return false
+      seen.add(r.link)
+      let hostname = ''
+      try { hostname = new URL(r.link).hostname } catch {}
+      r.favicon = `https://www.google.com/s2/favicons?domain=${hostname}&sz=32`
+      r.domain = hostname
+      return true
+    }).slice(0, 30)
 
     // AI Summary
     let aiSummary = null
-    const snippets = results.slice(0, 5).map(r => r.snippet || r.title).join(' | ')
-    const aiPrompt = `User searched for "${query}". Provide a helpful 2-3 sentence answer about this topic.${snippets ? ` Here is some context: ${snippets}` : ''}`
-    
-    // Try Gemini
-    const geminiKey = process.env.GEMINI_API_KEY
-    if (geminiKey) {
+    const snippets = dedupedResults.slice(0, 3).map(r => r.snippet).filter(Boolean).join(' ')
+    const aiPrompt = `About "${query}": ${snippets || wikiKnowledge?.description || ''}. Give a 2-3 sentence helpful answer. Sound natural.`
+
+    if (process.env.GEMINI_API_KEY) {
       try {
         const aiRes = await fetch(
-          `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${geminiKey}`,
-          {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              contents: [{ parts: [{ text: aiPrompt }] }]
-            })
-          }
+          `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${process.env.GEMINI_API_KEY}`,
+          { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ contents: [{ parts: [{ text: aiPrompt }] }] }) }
         )
         const aiData = await aiRes.json()
         if (aiData.candidates?.[0]?.content?.parts?.[0]?.text) {
-          aiSummary = {
-            answer: aiData.candidates[0].content.parts[0].text,
-            sources: results.slice(0, 3).map(r => {
-              try { return new URL(r.link).hostname.replace('www.', '') } 
-              catch { return r.link }
-            })
-          }
+          aiSummary = { answer: aiData.candidates[0].content.parts[0].text, sources: dedupedResults.slice(0, 3).map(r => r.domain || '') }
         }
       } catch {}
     }
-    
-    // Try Groq
-    const groqKey = process.env.GROQ_API_KEY
-    if (!aiSummary && groqKey) {
+
+    if (!aiSummary && process.env.GROQ_API_KEY) {
       try {
         const aiRes = await fetch('https://api.groq.com/openai/v1/chat/completions', {
-          method: 'POST',
-          headers: { 'Authorization': `Bearer ${groqKey}`, 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            model: 'llama-3.1-8b-instant',
-            messages: [{ role: 'user', content: aiPrompt }],
-            max_tokens: 200
-          })
+          method: 'POST', headers: { 'Authorization': `Bearer ${process.env.GROQ_API_KEY}`, 'Content-Type': 'application/json' },
+          body: JSON.stringify({ model: 'llama-3.1-8b-instant', messages: [{ role: 'user', content: aiPrompt }], max_tokens: 150 })
         })
         const aiData = await aiRes.json()
         if (aiData.choices?.[0]?.message?.content) {
-          aiSummary = {
-            answer: aiData.choices[0].message.content,
-            sources: results.slice(0, 3).map(r => {
-              try { return new URL(r.link).hostname.replace('www.', '') } 
-              catch { return r.link }
-            })
-          }
+          aiSummary = { answer: aiData.choices[0].message.content, sources: dedupedResults.slice(0, 3).map(r => r.domain || '') }
         }
       } catch {}
     }
 
-    // Try Cloudflare AI
-    if (!aiSummary) {
-      const cfAccountId = process.env.CF_ACCOUNT_ID
-      const cfToken = process.env.CF_API_TOKEN
-      if (cfAccountId && cfToken) {
-        try {
-          const cfRes = await fetch(
-            `https://api.cloudflare.com/client/v4/accounts/${cfAccountId}/ai/run/@cf/meta/llama-3.1-8b-instant`,
-            {
-              method: 'POST',
-              headers: { 'Authorization': `Bearer ${cfToken}`, 'Content-Type': 'application/json' },
-              body: JSON.stringify({ messages: [{ role: 'user', content: aiPrompt }] })
-            }
-          )
-          const cfData = await cfRes.json()
-          if (cfData.result?.response) {
-            aiSummary = {
-              answer: cfData.result.response,
-              sources: results.slice(0, 3).map(r => {
-                try { return new URL(r.link).hostname.replace('www.', '') } 
-                catch { return r.link }
-              })
-            }
-          }
-        } catch {}
-      }
+    if (!aiSummary && featuredSnippet) {
+      aiSummary = { answer: featuredSnippet.snippet, sources: ['Wikipedia'] }
     }
 
-    // Generate a basic summary if no AI available
-    if (!aiSummary && results.length > 0) {
-      aiSummary = {
-        answer: `This search for "${query}" returned ${results.length} results. Check the links below for more information.`,
-        sources: results.slice(0, 3).map(r => {
-          try { return new URL(r.link).hostname.replace('www.', '') } 
-          catch { return r.link }
-        })
-      }
+    const response = {
+      results: dedupedResults,
+      images: images.slice(0, 30),
+      aiSummary,
+      knowledgePanel: matchedPanel || null,
+      wikiKnowledge,
+      featuredSnippet,
+      relatedQuestions
     }
-
-    return NextResponse.json({ results, images, aiSummary })
+    
+    cache.set(cacheKey, { data: response, timestamp: Date.now() })
+    return NextResponse.json(response)
   } catch (err) {
     console.error(err)
-    // Return fallback results even on error
-    const fallbackQuery = encodeURIComponent(query || 'search')
-    return NextResponse.json({
-      results: [
-        { title: `Search on Google`, link: `https://google.com/search?q=${fallbackQuery}`, snippet: `Find results for this query on Google` },
-        { title: `Search on Bing`, link: `https://bing.com/search?q=${fallbackQuery}`, snippet: `Find results for this query on Bing` },
-      ],
-      images: Array(12).fill(null).map((_, i) => ({
-        title: `Image ${i + 1}`,
-        link: '#',
-        thumbnail: `https://picsum.photos/300/300?random=${i}`
-      })),
-      aiSummary: {
-        answer: `Showing search results for "${query}". Click any link below to learn more.`,
-        sources: ['google.com', 'bing.com']
-      }
-    })
+    return NextResponse.json({ results: [], images: [], aiSummary: null, knowledgePanel: null }, { status: 500 })
   }
 }

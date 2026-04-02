@@ -6,6 +6,9 @@ interface SearchResult {
   title: string
   link: string
   snippet: string
+  favicon?: string
+  siteName?: string
+  domain?: string
 }
 
 interface ImageResult {
@@ -29,6 +32,19 @@ interface AISummary {
   sources: string[]
 }
 
+interface WikiKnowledge {
+  title: string
+  description: string
+  image?: string
+  facts: Record<string, string>
+}
+
+interface FeaturedSnippet {
+  title: string
+  link: string
+  snippet: string
+}
+
 const RESULTS_PER_PAGE = 10
 
 export default function Search() {
@@ -37,6 +53,9 @@ export default function Search() {
   const [images, setImages] = useState<ImageResult[]>([])
   const [knowledgePanel, setKnowledgePanel] = useState<KnowledgePanel | null>(null)
   const [aiSummary, setAiSummary] = useState<AISummary | null>(null)
+  const [wikiKnowledge, setWikiKnowledge] = useState<WikiKnowledge | null>(null)
+  const [relatedQuestions, setRelatedQuestions] = useState<string[]>([])
+  const [featuredSnippet, setFeaturedSnippet] = useState<FeaturedSnippet | null>(null)
   const [loading, setLoading] = useState(false)
   const [showResults, setShowResults] = useState(false)
   const [selectedTab, setSelectedTab] = useState<'all' | 'images' | 'admin'>('all')
@@ -74,12 +93,14 @@ export default function Search() {
     setImages([])
     setKnowledgePanel(null)
     setAiSummary(null)
+    setWikiKnowledge(null)
+    setRelatedQuestions([])
+    setFeaturedSnippet(null)
 
     const stored = localStorage.getItem('sift_panels')
     const panels: KnowledgePanel[] = stored ? JSON.parse(stored) : []
     const queryLower = q.toLowerCase().trim()
     
-    // Match if query contains keyword or keyword contains query words
     const queryWords = queryLower.split(' ')
     const matchedPanel = panels.find(p => {
       const keyword = p.keyword.toLowerCase()
@@ -91,18 +112,13 @@ export default function Search() {
       const res = await fetch(`/api/search?q=${encodeURIComponent(q)}&page=${page}`)
       const data = await res.json()
       
-      if (data.results) {
-        setResults(data.results)
-      }
-      if (data.images) {
-        setImages(data.images)
-      }
-      if (matchedPanel && page === 1) {
-        setKnowledgePanel(matchedPanel)
-      }
-      if (data.aiSummary && page === 1) {
-        setAiSummary(data.aiSummary)
-      }
+      if (data.results) setResults(data.results)
+      if (data.images) setImages(data.images)
+      if (data.aiSummary) setAiSummary(data.aiSummary)
+      if (data.wikiKnowledge) setWikiKnowledge(data.wikiKnowledge)
+      if (data.relatedQuestions) setRelatedQuestions(data.relatedQuestions)
+      if (data.featuredSnippet) setFeaturedSnippet(data.featuredSnippet)
+      if (matchedPanel) setKnowledgePanel(matchedPanel)
     } catch (err) {
       console.error(err)
     }
@@ -283,46 +299,108 @@ export default function Search() {
               </div>
             ) : (
               <div className="space-y-6">
-                {knowledgePanel && (
-                  <div className="flex gap-6 bg-zinc-900 border border-zinc-800 rounded-2xl p-6">
-                    {knowledgePanel.image && (
-                      <img 
-                        src={knowledgePanel.image} 
-                        alt={knowledgePanel.title}
-                        className="w-40 h-40 object-cover rounded-xl"
-                      />
-                    )}
-                    <div className="flex-1">
-                      <h2 className="text-2xl font-bold mb-1">{knowledgePanel.title}</h2>
-                      <p className="text-zinc-400 mb-4">{knowledgePanel.subtitle}</p>
-                      <p className="text-zinc-300 mb-4">{knowledgePanel.description}</p>
-                      <div className="flex flex-wrap gap-2">
-                        {knowledgePanel.facts.map((fact, i) => (
-                          <span key={i} className="text-xs bg-zinc-800 px-3 py-1 rounded-full">{fact}</span>
-                        ))}
+                {/* Wiki Knowledge Panel (Google-style info box) */}
+                {(wikiKnowledge || knowledgePanel) && selectedTab !== 'images' && selectedTab !== 'admin' && (
+                  <div className="border border-zinc-700 rounded-lg overflow-hidden mb-6">
+                    <div className="bg-zinc-800 px-4 py-2 border-b border-zinc-700">
+                      <span className="text-sm text-zinc-400">
+                        {knowledgePanel ? 'People also search for' : 'Wikipedia'}
+                      </span>
+                    </div>
+                    <div className="flex flex-col md:flex-row">
+                      {(wikiKnowledge?.image || knowledgePanel?.image) && (
+                        <div className="p-4 md:border-r border-zinc-700 flex-shrink-0">
+                          <img 
+                            src={wikiKnowledge?.image || knowledgePanel?.image} 
+                            alt={wikiKnowledge?.title || knowledgePanel?.title}
+                            className="w-40 h-40 object-cover rounded-lg"
+                          />
+                        </div>
+                      )}
+                      <div className="flex-1 p-4">
+                        <h2 className="text-2xl font-normal text-white mb-1">
+                          {wikiKnowledge?.title || knowledgePanel?.title}
+                        </h2>
+                        <p className="text-zinc-400 text-sm mb-3">
+                          {knowledgePanel?.subtitle}
+                        </p>
+                        <p className="text-zinc-300 text-sm leading-relaxed mb-4">
+                          {wikiKnowledge?.description || knowledgePanel?.description}
+                        </p>
+                        {wikiKnowledge?.facts && Object.keys(wikiKnowledge.facts).length > 0 && (
+                          <div className="flex flex-wrap gap-x-6 gap-y-2 text-sm">
+                            {Object.entries(wikiKnowledge.facts).map(([key, value]) => (
+                              <div key={key} className="flex">
+                                <span className="text-zinc-500">{key}:</span>
+                                <span className="text-zinc-300 ml-1">{value}</span>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                        <div className="mt-4 pt-4 border-t border-zinc-700">
+                          <div className="flex gap-4">
+                            <button 
+                              onClick={() => window.open(`https://en.wikipedia.org/wiki/${encodeURIComponent(wikiKnowledge?.title || knowledgePanel?.title || '')}`, '_blank')}
+                              className="text-blue-400 hover:underline text-sm"
+                            >
+                              Wikipedia
+                            </button>
+                            <button 
+                              onClick={() => window.open(`https://www.google.com/search?q=${encodeURIComponent(wikiKnowledge?.title || knowledgePanel?.title || '')} images`, '_blank')}
+                              className="text-blue-400 hover:underline text-sm"
+                            >
+                              View images
+                            </button>
+                          </div>
+                        </div>
                       </div>
                     </div>
                   </div>
                 )}
 
-                {aiSummary && selectedTab !== 'images' && selectedTab !== 'admin' && (
-                  <div className="bg-gradient-to-r from-purple-900/50 to-pink-900/50 border border-purple-800/50 rounded-2xl p-6">
-                    <div className="flex items-center gap-2 mb-4">
-                      <div className="w-8 h-8 bg-purple-500 rounded-lg flex items-center justify-center">
-                        <svg className="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 10V3L4 14h7v7l9-11h-7z"/>
-                        </svg>
-                      </div>
-                      <span className="font-semibold">AI Answer</span>
-                    </div>
-                    <p className="text-zinc-200 text-lg leading-relaxed mb-4">{aiSummary.answer}</p>
+                {/* Featured Snippet */}
+                {featuredSnippet && selectedTab !== 'images' && selectedTab !== 'admin' && (
+                  <div className="bg-zinc-900/50 border border-zinc-800 rounded-lg p-4 mb-6">
+                    <p className="text-white text-lg leading-relaxed mb-2">{featuredSnippet.snippet}</p>
+                    <button 
+                      onClick={() => window.open(featuredSnippet.link, '_blank')}
+                      className="text-blue-400 hover:underline text-sm"
+                    >
+                      {featuredSnippet.title} - Wikipedia
+                    </button>
+                  </div>
+                )}
+
+                {/* AI Summary */}
+                {aiSummary && selectedTab !== 'images' && selectedTab !== 'admin' && !featuredSnippet && (
+                  <div className="mb-6">
+                    <p className="text-zinc-300 leading-relaxed">{aiSummary.answer}</p>
                     {aiSummary.sources.length > 0 && (
-                      <div className="flex flex-wrap gap-2">
+                      <div className="mt-2 flex items-center gap-2 text-sm">
+                        <span className="text-zinc-500">Sources:</span>
                         {aiSummary.sources.slice(0, 3).map((source, i) => (
-                          <span key={i} className="text-xs text-zinc-400 bg-black/30 px-2 py-1 rounded">{source}</span>
+                          <button key={i} onClick={() => window.open(`https://${source}`, '_blank')} className="text-blue-400 hover:underline">{source}</button>
                         ))}
                       </div>
                     )}
+                  </div>
+                )}
+
+                {/* Related Questions */}
+                {relatedQuestions.length > 0 && selectedTab !== 'images' && selectedTab !== 'admin' && (
+                  <div className="mb-6">
+                    <h3 className="text-white font-medium mb-3">People also ask</h3>
+                    <div className="space-y-2">
+                      {relatedQuestions.slice(0, 5).map((question, i) => (
+                        <button
+                          key={i}
+                          onClick={() => search(question.replace('What is ', '').replace('?', ''))}
+                          className="block w-full text-left p-3 bg-zinc-900/50 border border-zinc-800 rounded-lg hover:bg-zinc-900 transition-colors"
+                        >
+                          <span className="text-zinc-300">{question}</span>
+                        </button>
+                      ))}
+                    </div>
                   </div>
                 )}
 
@@ -338,16 +416,29 @@ export default function Search() {
                     ) : (
                       <>
                         {paginatedResults.map((result, i) => (
-                          <a
+                          <button
                             key={i}
-                            href={result.link}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="block group"
+                            onClick={() => window.open(result.link, '_blank')}
+                            className="block w-full text-left group hover:bg-zinc-900/50 p-4 rounded-lg transition-colors -mx-4 px-4"
                           >
+                            <div className="flex items-center gap-3 mb-2">
+                              {result.favicon && (
+                                <img 
+                                  src={result.favicon} 
+                                  alt="" 
+                                  className="w-6 h-6 rounded"
+                                  onError={(e) => { (e.target as HTMLImageElement).style.display = 'none' }}
+                                />
+                              )}
+                              <span className="text-sm text-green-500 truncate max-w-md">{result.domain}</span>
+                              <span className="text-zinc-600">›</span>
+                              <svg className="w-4 h-4 text-zinc-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                              </svg>
+                            </div>
                             <h3 className="text-xl text-blue-500 group-hover:underline mb-1">{result.title}</h3>
-                            <p className="text-zinc-400 leading-relaxed">{result.snippet}</p>
-                          </a>
+                            <p className="text-zinc-400 leading-relaxed text-sm">{result.snippet}</p>
+                          </button>
                         ))}
                         
                         {totalPages > 1 && (
@@ -436,6 +527,9 @@ function AdminPanel() {
   const [description, setDescription] = useState('')
   const [image, setImage] = useState('')
   const [facts, setFacts] = useState('')
+  const [imageSearch, setImageSearch] = useState('')
+  const [imageResults, setImageResults] = useState<{title: string; thumbnail: string; link: string}[]>([])
+  const [searchingImages, setSearchingImages] = useState(false)
   
   const getInitialPanels = (): KnowledgePanel[] => {
     if (typeof window === 'undefined') return []
@@ -445,13 +539,31 @@ function AdminPanel() {
     if (existingPanels.length === 0) {
       const defaultPanels: KnowledgePanel[] = [
         {
+          id: 'sift',
+          keyword: 'sift',
+          title: 'Sift',
+          subtitle: 'Web Search Engine',
+          description: 'Sift is a modern web search engine that provides fast, accurate search results with AI-powered summaries. Built as an alternative to traditional search engines, Sift offers a clean interface with knowledge panels, image search, and intelligent answers.',
+          image: '',
+          facts: ['Type: Search Engine', 'Founded: 2024', 'Features: AI Summaries', 'License: Open Source']
+        },
+        {
+          id: 'sift-browser',
+          keyword: 'sift browser',
+          title: 'Sift Browser',
+          subtitle: 'Search Engine & Browser',
+          description: 'Sift Browser is a modern search engine with in-browser page preview. It provides fast web searches, AI-powered answers, and keeps you within Sift while browsing.',
+          image: '',
+          facts: ['Type: Search Engine/Browser', 'Founded: 2024', 'Platform: Web-based', 'Features: Page Preview']
+        },
+        {
           id: '1',
           keyword: 'ariana grande',
           title: 'Ariana Grande',
           subtitle: 'American Singer, Songwriter & Actress',
           description: 'Ariana Grande-Butera is an American singer, songwriter, and actress. Known for her four-octave vocal range, she has received numerous accolades, including two Grammy Awards, an American Music Award, and a BAFTA.',
           image: 'https://upload.wikimedia.org/wikipedia/commons/thumb/e/e9/Ariana_Grande_2018.jpg/440px-Ariana_Grande_2018.jpg',
-          facts: ['Born: June 26, 1993', 'Nationality: American', 'Net Worth: $200M+', 'Albums: 7 studio albums', 'Instagram: 380M+ followers']
+          facts: ['Born: June 26, 1993', 'Nationality: American', 'Net Worth: $200M+', 'Albums: 7 studio albums']
         }
       ]
       localStorage.setItem('sift_panels', JSON.stringify(defaultPanels))
@@ -494,6 +606,23 @@ function AdminPanel() {
     localStorage.setItem('sift_panels', JSON.stringify(updated))
   }
 
+  const searchImages = async (q: string) => {
+    if (!q.trim()) return
+    setSearchingImages(true)
+    try {
+      const res = await fetch(`/api/images?q=${encodeURIComponent(q)}`)
+      const data = await res.json()
+      setImageResults(data.images || [])
+    } catch {}
+    setSearchingImages(false)
+  }
+
+  const selectImage = (url: string) => {
+    setImage(url)
+    setImageResults([])
+    setImageSearch('')
+  }
+
   return (
     <div className="space-y-6">
       <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-6">
@@ -533,13 +662,18 @@ function AdminPanel() {
           </div>
           <div>
             <label className="block text-sm text-zinc-400 mb-2">Image URL</label>
-            <input
-              type="text"
-              value={image}
-              onChange={(e) => setImage(e.target.value)}
-              placeholder="https://..."
-              className="w-full bg-black border border-zinc-700 rounded-lg px-4 py-3 outline-none focus:border-zinc-500"
-            />
+            <div className="space-y-2">
+              <input
+                type="text"
+                value={image}
+                onChange={(e) => setImage(e.target.value)}
+                placeholder="https://... or search below"
+                className="w-full bg-black border border-zinc-700 rounded-lg px-4 py-3 outline-none focus:border-zinc-500"
+              />
+              {image && (
+                <img src={image} alt="Preview" className="w-20 h-20 object-cover rounded-lg" />
+              )}
+            </div>
           </div>
         </div>
         
@@ -563,6 +697,44 @@ function AdminPanel() {
             placeholder="Born 1993, Singer, Actress"
             className="w-full bg-black border border-zinc-700 rounded-lg px-4 py-3 outline-none focus:border-zinc-500"
           />
+        </div>
+
+        <div className="mb-6">
+          <label className="block text-sm text-zinc-400 mb-2">Search Images</label>
+          <div className="flex gap-2">
+            <input
+              type="text"
+              value={imageSearch}
+              onChange={(e) => setImageSearch(e.target.value)}
+              onKeyDown={(e) => e.key === 'Enter' && searchImages(imageSearch)}
+              placeholder="Search for images..."
+              className="flex-1 bg-black border border-zinc-700 rounded-lg px-4 py-3 outline-none focus:border-zinc-500"
+            />
+            <button
+              onClick={() => searchImages(imageSearch)}
+              className="px-4 py-3 bg-zinc-700 text-white rounded-lg hover:bg-zinc-600"
+            >
+              Search
+            </button>
+          </div>
+          {searchingImages ? (
+            <div className="mt-4 flex items-center gap-2">
+              <div className="w-5 h-5 border-2 border-zinc-600 border-t-white rounded-full animate-spin"/>
+              <span className="text-zinc-400 text-sm">Searching...</span>
+            </div>
+          ) : imageResults.length > 0 ? (
+            <div className="mt-4 grid grid-cols-4 gap-2 max-h-60 overflow-y-auto">
+              {imageResults.map((img, i) => (
+                <button
+                  key={i}
+                  onClick={() => selectImage(img.thumbnail)}
+                  className={`p-1 rounded-lg border-2 transition-colors ${image === img.thumbnail ? 'border-blue-500' : 'border-transparent hover:border-zinc-600'}`}
+                >
+                  <img src={img.thumbnail} alt={img.title} className="w-full aspect-square object-cover rounded" />
+                </button>
+              ))}
+            </div>
+          ) : null}
         </div>
         
         <button
