@@ -72,13 +72,6 @@ export default function Search() {
     inputRef.current?.focus()
   }
 
-  const quickLinks = [
-    { name: 'YouTube', query: 'site:youtube.com' },
-    { name: 'Wikipedia', query: 'site:wikipedia.org' },
-    { name: 'GitHub', query: 'site:github.com' },
-    { name: 'Amazon', query: 'site:amazon.com' },
-  ]
-
   return (
     <div className="min-h-screen bg-black text-white font-sans">
       <div className="max-w-4xl mx-auto px-4">
@@ -124,18 +117,30 @@ export default function Search() {
             </div>
 
             <div className="flex gap-3 mt-8">
-              {quickLinks.map((link) => (
-                <button
-                  key={link.name}
-                  onClick={() => {
-                    setQuery(link.query)
-                    search(link.query)
-                  }}
-                  className="flex items-center gap-2 px-4 py-2 bg-zinc-900 border border-zinc-800 rounded-full text-sm text-zinc-400 hover:bg-zinc-800 hover:text-white transition-colors"
-                >
-                  {link.name}
-                </button>
-              ))}
+              <button
+                onClick={() => search('site:youtube.com')}
+                className="px-4 py-2 bg-zinc-900 border border-zinc-800 rounded-full text-sm text-zinc-400 hover:bg-zinc-800 hover:text-white transition-colors"
+              >
+                YouTube
+              </button>
+              <button
+                onClick={() => search('site:wikipedia.org')}
+                className="px-4 py-2 bg-zinc-900 border border-zinc-800 rounded-full text-sm text-zinc-400 hover:bg-zinc-800 hover:text-white transition-colors"
+              >
+                Wikipedia
+              </button>
+              <button
+                onClick={() => search('site:github.com')}
+                className="px-4 py-2 bg-zinc-900 border border-zinc-800 rounded-full text-sm text-zinc-400 hover:bg-zinc-800 hover:text-white transition-colors"
+              >
+                GitHub
+              </button>
+              <button
+                onClick={() => search('site:amazon.com')}
+                className="px-4 py-2 bg-zinc-900 border border-zinc-800 rounded-full text-sm text-zinc-400 hover:bg-zinc-800 hover:text-white transition-colors"
+              >
+                Amazon
+              </button>
             </div>
           </div>
         ) : (
