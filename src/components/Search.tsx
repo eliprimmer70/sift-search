@@ -170,12 +170,25 @@ export default function Search() {
     setSelectedArticle({ title: article.title, content: '', image: article.image })
     
     try {
-      const res = await fetch(`/api/fetch?url=${encodeURIComponent(article.link)}`)
+      // Try the dedicated article endpoint first for better content
+      const res = await fetch(`/api/article?url=${encodeURIComponent(article.link)}`)
       const data = await res.json()
-      if (data.title && data.text) {
-        setSelectedArticle({ title: data.title, content: data.text, image: data.image || article.image })
+      
+      if (data.title && (data.text || data.description)) {
+        setSelectedArticle({ 
+          title: data.title || article.title, 
+          content: data.text || data.description || '', 
+          image: data.image || article.image 
+        })
       } else {
-        setSelectedArticle({ title: article.title, content: article.snippet || 'Content unavailable', image: article.image })
+        // Fallback to regular fetch
+        const fallbackRes = await fetch(`/api/fetch?url=${encodeURIComponent(article.link)}`)
+        const fallbackData = await fallbackRes.json()
+        if (fallbackData.title && fallbackData.text) {
+          setSelectedArticle({ title: fallbackData.title, content: fallbackData.text, image: fallbackData.image || article.image })
+        } else {
+          setSelectedArticle({ title: article.title, content: article.snippet || 'Full content loading...', image: article.image })
+        }
       }
     } catch {
       setSelectedArticle({ title: article.title, content: article.snippet || 'Content unavailable', image: article.image })
@@ -488,30 +501,54 @@ export default function Search() {
                             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7"/>
                             </svg>
-                            Back
+                            Back to news
                           </button>
                           <button 
                             onClick={() => window.open(newsArticles.find(a => a.title === selectedArticle.title)?.link, '_blank')}
-                            className="text-blue-400 hover:underline text-sm"
+                            className="px-4 py-2 bg-white text-black text-sm font-medium rounded-full hover:bg-zinc-200"
                           >
-                            Open original
+                            Open original site
                           </button>
                         </div>
-                        {selectedArticle.image && (
-                          <img src={selectedArticle.image} alt="" className="w-full h-64 object-cover" />
-                        )}
-                        <div className="p-6">
-                          {loadingArticle ? (
-                            <div className="flex items-center justify-center py-8">
-                              <div className="w-8 h-8 border-2 border-zinc-600 border-t-white rounded-full animate-spin"/>
+                        
+                        {loadingArticle ? (
+                          <div className="p-8">
+                            <div className="max-w-3xl mx-auto">
+                              <div className="bg-zinc-800 h-8 w-3/4 rounded mb-4 animate-pulse"/>
+                              <div className="bg-zinc-800 h-64 rounded mb-6 animate-pulse"/>
+                              <div className="space-y-3">
+                                <div className="bg-zinc-800 h-4 rounded animate-pulse"/>
+                                <div className="bg-zinc-800 h-4 rounded animate-pulse"/>
+                                <div className="bg-zinc-800 h-4 w-2/3 rounded animate-pulse"/>
+                              </div>
                             </div>
-                          ) : (
-                            <>
-                              <h2 className="text-2xl font-bold mb-4">{selectedArticle.title}</h2>
-                              <p className="text-zinc-300 leading-relaxed whitespace-pre-wrap">{selectedArticle.content}</p>
-                            </>
-                          )}
-                        </div>
+                          </div>
+                        ) : (
+                          <div className="max-w-3xl mx-auto">
+                            {selectedArticle.image && (
+                              <img src={selectedArticle.image} alt="" className="w-full h-80 object-cover" />
+                            )}
+                            <div className="p-8">
+                              <h1 className="text-3xl font-bold text-white mb-4 leading-tight">{selectedArticle.title}</h1>
+                              <div className="flex items-center gap-4 text-zinc-500 text-sm mb-6 pb-6 border-b border-zinc-800">
+                                <span>{newsArticles.find(a => a.title === selectedArticle.title)?.source}</span>
+                                <span>•</span>
+                                <span>{newsArticles.find(a => a.title === selectedArticle.title)?.date ? new Date(newsArticles.find(a => a.title === selectedArticle.title)?.date || '').toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' }) : ''}</span>
+                              </div>
+                              <div className="prose prose-invert prose-lg max-w-none">
+                                <p className="text-zinc-300 leading-relaxed text-lg whitespace-pre-wrap">{selectedArticle.content}</p>
+                              </div>
+                              <div className="mt-8 pt-6 border-t border-zinc-800">
+                                <button 
+                                  onClick={() => window.open(newsArticles.find(a => a.title === selectedArticle.title)?.link, '_blank')}
+                                  className="px-6 py-3 bg-blue-600 text-white font-medium rounded-full hover:bg-blue-700 transition-colors"
+                                >
+                                  Read full article on {newsArticles.find(a => a.title === selectedArticle.title)?.source}
+                                </button>
+                              </div>
+                            </div>
+                          </div>
+                        )}
                       </div>
                     ) : !query ? (
                       <div className="text-center py-12 text-zinc-500">
