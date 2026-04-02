@@ -47,6 +47,22 @@ export default function Search() {
     if (inputRef.current) {
       inputRef.current.focus()
     }
+    // Initialize knowledge panels on app load
+    const stored = localStorage.getItem('sift_panels')
+    if (!stored || JSON.parse(stored).length === 0) {
+      const defaultPanels: KnowledgePanel[] = [
+        {
+          id: '1',
+          keyword: 'ariana grande',
+          title: 'Ariana Grande',
+          subtitle: 'American Singer, Songwriter & Actress',
+          description: 'Ariana Grande-Butera is an American singer, songwriter, and actress. Known for her four-octave vocal range, she has received numerous accolades, including two Grammy Awards, an American Music Award, and a BAFTA.',
+          image: 'https://upload.wikimedia.org/wikipedia/commons/thumb/e/e9/Ariana_Grande_2018.jpg/440px-Ariana_Grande_2018.jpg',
+          facts: ['Born: June 26, 1993', 'Nationality: American', 'Net Worth: $200M+', 'Albums: 7 studio albums', 'Instagram: 380M+ followers']
+        }
+      ]
+      localStorage.setItem('sift_panels', JSON.stringify(defaultPanels))
+    }
   }, [])
 
   const search = async (q: string, page: number = 1) => {
@@ -61,8 +77,15 @@ export default function Search() {
 
     const stored = localStorage.getItem('sift_panels')
     const panels: KnowledgePanel[] = stored ? JSON.parse(stored) : []
-    const queryLower = q.toLowerCase()
-    const matchedPanel = panels.find(p => queryLower.includes(p.keyword) || p.keyword.includes(queryLower))
+    const queryLower = q.toLowerCase().trim()
+    
+    // Match if query contains keyword or keyword contains query words
+    const queryWords = queryLower.split(' ')
+    const matchedPanel = panels.find(p => {
+      const keyword = p.keyword.toLowerCase()
+      return queryLower.includes(keyword) || 
+             keyword.split(' ').some(kw => queryWords.some(qw => qw.includes(kw) || kw.includes(qw)))
+    })
 
     try {
       const res = await fetch(`/api/search?q=${encodeURIComponent(q)}&page=${page}`)
