@@ -48,73 +48,111 @@ export async function GET(request: Request) {
 
     // Get AI summary if API key is available
     let aiSummary = null
-    const aiKey = process.env.GROQ_API_KEY || process.env.CLOUDFLARE_API_TOKEN
+    const snippets = results.slice(0, 3).map(r => r.snippet || r.title).join(' | ')
+    const aiPrompt = `Based on these search results for "${query}": ${snippets}. Give a brief 2-3 sentence answer.`
     
-    if (aiKey && results.length > 0) {
+    // Try Gemini API first (Google AI Studio)
+    const geminiKey = process.env.GEMINI_API_KEY
+    if (geminiKey && results.length > 0) {
       try {
-        const snippets = results.slice(0, 3).map(r => r.snippet || r.title).join(' | ')
-        const aiPrompt = `Based on these search results for "${query}": ${snippets}. Give a Brief 2-3 sentence answer.`
-
-        if (process.env.GROQ_API_KEY) {
-          const aiRes = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+        const aiRes = await fetch(
+          `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${geminiKey}`,
+          {
             method: 'POST',
-            headers: {
-              'Authorization': `Bearer ${process.env.GROQ_API_KEY}`,
-              'Content-Type': 'application/json'
-            },
+            headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
-              model: 'llama-3.1-8b-instant',
-              messages: [{ role: 'user', content: aiPrompt }],
-              max_tokens: 200
+              contents: [{ parts: [{ text: aiPrompt }] }]
             })
-          })
-          const aiData = await aiRes.json()
-          if (aiData.choices?.[0]?.message?.content) {
-            aiSummary = {
-              answer: aiData.choices[0].message.content,
-              sources: results.slice(0, 3).map(r => {
-                try {
-                  return new URL(r.link).hostname.replace('www.', '')
-                } catch {
-                  return r.link
-                }
-              })
-            }
           }
-        } else if (process.env.CLOUDFLARE_API_TOKEN) {
-          const aiRes = await fetch(
-            `https://api.cloudflare.com/client/v4/accounts/${process.env.CLOUDFLARE_ACCOUNT_ID}/ai/run/@cf/meta/llama-3-8b-instruct`,
-            {
-              method: 'POST',
-              headers: {
-                'Authorization': `Bearer ${process.env.CLOUDFLARE_API_TOKEN}`,
-                'Content-Type': 'application/json'
-              },
-              body: JSON.stringify({
-                messages: [
-                  { role: 'system', content: 'You give brief answers based on search results.' },
-                  { role: 'user', content: aiPrompt }
-                ],
-                max_tokens: 200
-              })
-            }
-          )
-          const aiData = await aiRes.json()
-          if (aiData.result?.response) {
-            aiSummary = {
-              answer: aiData.result.response,
-              sources: results.slice(0, 3).map(r => {
-                try {
-                  return new URL(r.link).hostname.replace('www.', '')
-                } catch {
-                  return r.link
-                }
-              })
-            }
+        )
+        const aiData = await aiRes.json()
+        if (aiData.candidates?.[0]?.content?.parts?.[0]?.text) {
+          aiSummary = {
+            answer: aiData.candidates[0].content.parts[0].text,
+            sources: results.slice(0, 3).map(r => {
+              try {
+                return new URL(r.link).hostname.replace('www.', '')
+              } catch {
+                return r.link
+              }
+            })
           }
         }
       } catch (err) {
-        console.error('AI summary error:', err)
+        console.error('Gemini error:', err)
+      }
+    }
+    
+    // Try Groq if Gemini not available
+    const groqKey = process.env.GROQ_API_KEY
+    if (!aiSummary && groqKey && results.length > 0) {
+      try {
+        const aiRes = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${groqKey}`,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            model: 'llama-3.1-8b-instant',
+            messages: [{ role: 'user', content: aiPrompt }],
+            max_tokens: 200
+          })
+        })
+        const aiData = await aiRes.json()
+        if (aiData.choices?.[0]?.message?.content) {
+          aiSummary = {
+            answer: aiData.choices[0].message.content,
+            sources: results.slice(0, 3).map(r => {
+              try {
+                return new URL(r.link).hostname.replace('www.', '')
+              } catch {
+                return r.link
+              }
+            })
+          }
+        }
+      } catch (err) {
+        console.error('Groq error:', err)
+      }
+    }
+
+    // Try Cloudflare if neither Gemini nor Groq
+    const cfKey = process.env.CLOUDFLARE_API_TOKEN
+    if (!aiSummary && cfKey && results.length > 0) {
+      try {
+        const aiRes = await fetch(
+          `https://api.cloudflare.com/client/v4/accounts/${process.env.CLOUDFLARE_ACCOUNT_ID}/ai/run/@cf/meta/llama-3-8b-instruct`,
+          {
+            method: 'POST',
+            headers: {
+              'Authorization': `Bearer ${cfKey}`,
+              'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+              messages: [
+                { role: 'system', content: 'You give brief answers based on search results.' },
+                { role: 'user', content: aiPrompt }
+              ],
+              max_tokens: 200
+            })
+          }
+        )
+        const aiData = await aiRes.json()
+        if (aiData.result?.response) {
+          aiSummary = {
+            answer: aiData.result.response,
+            sources: results.slice(0, 3).map(r => {
+              try {
+                return new URL(r.link).hostname.replace('www.', '')
+              } catch {
+                return r.link
+              }
+            })
+          }
+        }
+      } catch (err) {
+        console.error('Cloudflare error:', err)
       }
     }
 
