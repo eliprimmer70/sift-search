@@ -45,6 +45,15 @@ interface FeaturedSnippet {
   snippet: string
 }
 
+interface NewsArticle {
+  title: string
+  link: string
+  snippet: string
+  source: string
+  date: string
+  image?: string
+}
+
 const RESULTS_PER_PAGE = 10
 
 export default function Search() {
@@ -56,6 +65,10 @@ export default function Search() {
   const [wikiKnowledge, setWikiKnowledge] = useState<WikiKnowledge | null>(null)
   const [relatedQuestions, setRelatedQuestions] = useState<string[]>([])
   const [featuredSnippet, setFeaturedSnippet] = useState<FeaturedSnippet | null>(null)
+  const [newsArticles, setNewsArticles] = useState<NewsArticle[]>([])
+  const [loadingNews, setLoadingNews] = useState(false)
+  const [selectedArticle, setSelectedArticle] = useState<{ title: string; content: string; image?: string } | null>(null)
+  const [loadingArticle, setLoadingArticle] = useState(false)
   const [loading, setLoading] = useState(false)
   const [showResults, setShowResults] = useState(false)
   const [selectedTab, setSelectedTab] = useState<'all' | 'images' | 'admin'>('all')
@@ -86,7 +99,7 @@ export default function Search() {
 
   const search = async (q: string, page: number = 1) => {
     if (!q.trim()) return
-    setQuery(q) // Update the search input
+    setQuery(q)
     setLoading(true)
     setShowResults(true)
     setCurrentPage(page)
@@ -97,6 +110,8 @@ export default function Search() {
     setWikiKnowledge(null)
     setRelatedQuestions([])
     setFeaturedSnippet(null)
+    setNewsArticles([])
+    setSelectedArticle(null)
 
     const stored = localStorage.getItem('sift_panels')
     const panels: KnowledgePanel[] = stored ? JSON.parse(stored) : []
@@ -124,7 +139,35 @@ export default function Search() {
       console.error(err)
     }
 
+    // Fetch news
+    setLoadingNews(true)
+    try {
+      const newsRes = await fetch(`/api/news?q=${encodeURIComponent(q)}`)
+      const newsData = await newsRes.json()
+      if (newsData.articles) setNewsArticles(newsData.articles)
+    } catch {}
+    setLoadingNews(false)
+
     setLoading(false)
+  }
+
+  const loadArticle = async (article: NewsArticle) => {
+    setLoadingArticle(true)
+    setSelectedArticle({ title: article.title, content: '', image: article.image })
+    
+    try {
+      const res = await fetch(`/api/fetch?url=${encodeURIComponent(article.link)}`)
+      const data = await res.json()
+      if (data.title && data.text) {
+        setSelectedArticle({ title: data.title, content: data.text, image: data.image || article.image })
+      } else {
+        setSelectedArticle({ title: article.title, content: article.snippet || 'Content unavailable', image: article.image })
+      }
+    } catch {
+      setSelectedArticle({ title: article.title, content: article.snippet || 'Content unavailable', image: article.image })
+    }
+    
+    setLoadingArticle(false)
   }
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
@@ -402,6 +445,82 @@ export default function Search() {
                         </button>
                       ))}
                     </div>
+                  </div>
+                )}
+
+                {/* News Section */}
+                {(loadingNews ? Array(3).fill(null) : newsArticles).length > 0 && selectedTab !== 'images' && selectedTab !== 'admin' && (
+                  <div className="mb-6">
+                    <h3 className="text-white font-medium mb-4 flex items-center gap-2">
+                      <svg className="w-5 h-5 text-orange-500" fill="currentColor" viewBox="0 0 24 24">
+                        <path d="M19 5v14H5V5h14m0-2H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm-5 14H7v-2h7v2zm3-4H7v-2h10v2zm0-4H7V7h10v2z"/>
+                      </svg>
+                      Latest News
+                    </h3>
+                    
+                    {selectedArticle ? (
+                      <div className="bg-zinc-900 border border-zinc-800 rounded-xl overflow-hidden">
+                        <div className="p-4 border-b border-zinc-800 flex items-center justify-between">
+                          <button 
+                            onClick={() => setSelectedArticle(null)}
+                            className="text-zinc-400 hover:text-white flex items-center gap-2"
+                          >
+                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7"/>
+                            </svg>
+                            Back to news
+                          </button>
+                          <button 
+                            onClick={() => window.open(newsArticles.find(a => a.title === selectedArticle.title)?.link, '_blank')}
+                            className="text-blue-400 hover:underline text-sm"
+                          >
+                            Open original
+                          </button>
+                        </div>
+                        {selectedArticle.image && (
+                          <img src={selectedArticle.image} alt="" className="w-full h-48 object-cover" />
+                        )}
+                        <div className="p-6">
+                          {loadingArticle ? (
+                            <div className="flex items-center justify-center py-8">
+                              <div className="w-6 h-6 border-2 border-zinc-600 border-t-white rounded-full animate-spin"/>
+                            </div>
+                          ) : (
+                            <>
+                              <h2 className="text-2xl font-bold mb-4">{selectedArticle.title}</h2>
+                              <p className="text-zinc-300 leading-relaxed whitespace-pre-wrap">{selectedArticle.content}</p>
+                            </>
+                          )}
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        {loadingNews ? (
+                          Array(4).fill(null).map((_, i) => (
+                            <div key={i} className="bg-zinc-900/50 border border-zinc-800 rounded-lg p-4 animate-pulse">
+                              <div className="bg-zinc-800 h-32 rounded mb-3"/>
+                              <div className="bg-zinc-800 h-4 w-3/4 rounded mb-2"/>
+                              <div className="bg-zinc-800 h-3 w-1/2 rounded"/>
+                            </div>
+                          ))
+                        ) : (
+                          newsArticles.slice(0, 8).map((article, i) => (
+                            <button
+                              key={i}
+                              onClick={() => loadArticle(article)}
+                              className="bg-zinc-900/50 border border-zinc-800 rounded-lg p-4 text-left hover:bg-zinc-900 transition-colors"
+                            >
+                              {article.image && (
+                                <img src={article.image} alt="" className="w-full h-32 object-cover rounded-lg mb-3" />
+                              )}
+                              <h4 className="text-white font-medium mb-1 line-clamp-2">{article.title}</h4>
+                              <p className="text-zinc-500 text-xs mb-2">{article.source} • {article.date ? new Date(article.date).toLocaleDateString() : ''}</p>
+                              <p className="text-zinc-400 text-sm line-clamp-2">{article.snippet}</p>
+                            </button>
+                          ))
+                        )}
+                      </div>
+                    )}
                   </div>
                 )}
 

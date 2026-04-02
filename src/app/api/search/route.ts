@@ -58,6 +58,107 @@ function parseQueryForRichResults(query: string) {
   return null
 }
 
+// All search sources with detailed descriptions
+const SEARCH_SOURCES = [
+  // Video & Streaming
+  { name: 'YouTube', domain: 'youtube.com', searchParam: 'search_query', icon: 'video', description: 'Watch videos, tutorials, reviews, and entertainment' },
+  { name: 'TikTok', domain: 'tiktok.com', searchParam: 'q', icon: 'video', description: 'Short-form videos and trending content' },
+  { name: 'Vimeo', domain: 'vimeo.com', searchParam: 'q', icon: 'video', description: 'Professional and creative videos' },
+  { name: 'Twitch', domain: 'twitch.tv', searchParam: 'search', icon: 'video', description: 'Live streams and gaming content' },
+  
+  // Social Media
+  { name: 'Twitter/X', domain: 'twitter.com', searchParam: 'q', icon: 'social', description: 'Latest tweets and trending discussions' },
+  { name: 'Reddit', domain: 'reddit.com', searchParam: 'q', icon: 'social', description: 'Community discussions, forums, and news' },
+  { name: 'Instagram', domain: 'instagram.com', searchParam: 'q', icon: 'social', description: 'Photos, stories, and social content' },
+  { name: 'Facebook', domain: 'facebook.com', searchParam: 'q', icon: 'social', description: 'Social network posts and groups' },
+  { name: 'LinkedIn', domain: 'linkedin.com', searchParam: 'q', icon: 'social', description: 'Professional networking and job search' },
+  { name: 'Snapchat', domain: 'snapchat.com', searchParam: 'q', icon: 'social', description: 'Social media and stories' },
+  { name: 'Pinterest', domain: 'pinterest.com', searchParam: 'q', icon: 'social', description: 'Ideas, inspiration, and visual discovery' },
+  { name: 'Threads', domain: 'threads.net', searchParam: 'q', icon: 'social', description: 'Conversations and social discussions' },
+  { name: 'Bluesky', domain: 'bsky.app', searchParam: 'q', icon: 'social', description: 'Decentralized social network' },
+  
+  // News & Media
+  { name: 'Google News', domain: 'news.google.com', searchParam: 'q', icon: 'news', description: 'Breaking news and top headlines' },
+  { name: 'CNN', domain: 'cnn.com', searchParam: 'q', icon: 'news', description: 'Breaking news, politics, and world events' },
+  { name: 'BBC News', domain: 'bbc.com', searchParam: 'q', icon: 'news', description: 'World news and current affairs' },
+  { name: 'Fox News', domain: 'foxnews.com', searchParam: 'q', icon: 'news', description: 'Breaking news and political coverage' },
+  { name: 'NBC News', domain: 'nbcnews.com', searchParam: 'q', icon: 'news', description: 'Breaking news and investigative journalism' },
+  { name: 'CBS News', domain: 'cbsnews.com', searchParam: 'q', icon: 'news', description: 'News, politics, and entertainment' },
+  { name: 'ABC News', domain: 'abcnews.go.com', searchParam: 'q', icon: 'news', description: 'Breaking news and in-depth reporting' },
+  { name: 'NPR', domain: 'npr.org', searchParam: 'q', icon: 'news', description: 'National public radio news and analysis' },
+  { name: 'Reuters', domain: 'reuters.com', searchParam: 'q', icon: 'news', description: 'Global news and financial reporting' },
+  { name: 'AP News', domain: 'apnews.com', searchParam: 'q', icon: 'news', description: 'Associated Press breaking news' },
+  { name: 'The Guardian', domain: 'theguardian.com', searchParam: 'q', icon: 'news', description: 'Independent journalism and analysis' },
+  { name: 'NY Times', domain: 'nytimes.com', searchParam: 'q', icon: 'news', description: 'In-depth news and investigative journalism' },
+  { name: 'Washington Post', domain: 'washingtonpost.com', searchParam: 'q', icon: 'news', description: 'National and political news coverage' },
+  { name: 'HuffPost', domain: 'huffpost.com', searchParam: 'q', icon: 'news', description: 'News, politics, and opinion pieces' },
+  { name: 'Yahoo News', domain: 'news.yahoo.com', searchParam: 'q', icon: 'news', description: 'Latest news and headlines' },
+  { name: 'MSN News', domain: 'msn.com', searchParam: 'q', icon: 'news', description: 'News, weather, and lifestyle content' },
+  
+  // Tech & Programming
+  { name: 'GitHub', domain: 'github.com', searchParam: 'q', icon: 'tech', description: 'Open source code, projects, and repositories' },
+  { name: 'Stack Overflow', domain: 'stackoverflow.com', searchParam: 'q', icon: 'tech', description: 'Programming Q&A and technical solutions' },
+  { name: 'Hacker News', domain: 'news.ycombinator.com', searchParam: 'q', icon: 'tech', description: 'Tech news and startup discussions' },
+  { name: 'Product Hunt', domain: 'producthunt.com', searchParam: 'q', icon: 'tech', description: 'New tech products and startups' },
+  { name: 'Dev.to', domain: 'dev.to', searchParam: 'q', icon: 'tech', description: 'Developer articles and tutorials' },
+  { name: 'TechCrunch', domain: 'techcrunch.com', searchParam: 'q', icon: 'tech', description: 'Tech news and startup coverage' },
+  { name: 'Ars Technica', domain: 'arstechnica.com', searchParam: 'q', icon: 'tech', description: 'Technology news and analysis' },
+  { name: 'Wired', domain: 'wired.com', searchParam: 'q', icon: 'tech', description: 'Tech culture, science, and business' },
+  { name: 'The Verge', domain: 'theverge.com', searchParam: 'q', icon: 'tech', description: 'Tech news, product reviews, and culture' },
+  { name: 'CNET', domain: 'cnet.com', searchParam: 'q', icon: 'tech', description: 'Tech product reviews and news' },
+  { name: 'Mashable', domain: 'mashable.com', searchParam: 'q', icon: 'tech', description: 'Tech, culture, and social media news' },
+  { name: 'Medium', domain: 'medium.com', searchParam: 'q', icon: 'tech', description: 'Articles and essays on various topics' },
+  
+  // Reference & Learning
+  { name: 'Wikipedia', domain: 'wikipedia.org', searchParam: 'search', icon: 'reference', description: 'Free encyclopedia with detailed articles' },
+  { name: 'Britannica', domain: 'britannica.com', searchParam: 'q', icon: 'reference', description: 'Encyclopedia and educational content' },
+  { name: 'Wolfram Alpha', domain: 'wolframalpha.com', searchParam: 'i', icon: 'reference', description: 'Computational knowledge engine' },
+  { name: 'Khan Academy', domain: 'khanacademy.org', searchParam: 'q', icon: 'reference', description: 'Free educational videos and lessons' },
+  { name: 'Quizlet', domain: 'quizlet.com', searchParam: 'q', icon: 'reference', description: 'Flashcards and study tools' },
+  { name: 'Coursera', domain: 'coursera.org', searchParam: 'q', icon: 'reference', description: 'Online courses from top universities' },
+  { name: 'Udemy', domain: 'udemy.com', searchParam: 'q', icon: 'reference', description: 'Online learning and tutorials' },
+  
+  // Shopping & Reviews
+  { name: 'Amazon', domain: 'amazon.com', searchParam: 'k', icon: 'shopping', description: 'Products, prices, and customer reviews' },
+  { name: 'eBay', domain: 'ebay.com', searchParam: '_nkw', icon: 'shopping', description: 'Auctions and buy/sell marketplace' },
+  { name: 'Walmart', domain: 'walmart.com', searchParam: 'q', icon: 'shopping', description: 'Everyday low prices and products' },
+  { name: 'Target', domain: 'target.com', searchParam: 'q', icon: 'shopping', description: 'Products and deals' },
+  { name: 'Best Buy', domain: 'bestbuy.com', searchParam: 'q', icon: 'shopping', description: 'Electronics and tech products' },
+  { name: 'Yelp', domain: 'yelp.com', searchParam: 'find_desc', icon: 'shopping', description: 'Local business reviews and ratings' },
+  { name: 'TripAdvisor', domain: 'tripadvisor.com', searchParam: 'q', icon: 'shopping', description: 'Travel reviews and booking' },
+  { name: 'IMDb', domain: 'imdb.com', searchParam: 'q', icon: 'shopping', description: 'Movie and TV show information and reviews' },
+  { name: 'Rotten Tomatoes', domain: 'rottentomatoes.com', searchParam: 'q', icon: 'shopping', description: 'Movie reviews and ratings' },
+  { name: 'Goodreads', domain: 'goodreads.com', searchParam: 'q', icon: 'shopping', description: 'Book reviews and reading lists' },
+  
+  // Q&A & Community
+  { name: 'Quora', domain: 'quora.com', searchParam: 'q', icon: 'qa', description: 'Questions, answers, and expert insights' },
+  { name: 'Answers.com', domain: 'answers.com', searchParam: 'q', icon: 'qa', description: 'Q&A and encyclopedia answers' },
+  { name: 'WikiAnswers', domain: 'qa.answers.com', searchParam: 'q', icon: 'qa', description: 'Community Q&A platform' },
+  { name: 'Stack Exchange', domain: 'stackexchange.com', searchParam: 'q', icon: 'qa', description: 'Q&A communities on various topics' },
+  
+  // Finance & Business
+  { name: 'Bloomberg', domain: 'bloomberg.com', searchParam: 'q', icon: 'finance', description: 'Financial news and market data' },
+  { name: 'CNBC', domain: 'cnbc.com', searchParam: 'q', icon: 'finance', description: 'Business and financial news' },
+  { name: 'Forbes', domain: 'forbes.com', searchParam: 'q', icon: 'finance', description: 'Business, investing, and leadership' },
+  { name: 'Business Insider', domain: 'businessinsider.com', searchParam: 'q', icon: 'finance', description: 'Business and tech news' },
+  { name: 'Wall Street Journal', domain: 'wsj.com', searchParam: 'q', icon: 'finance', description: 'Business and financial news coverage' },
+  { name: 'MarketWatch', domain: 'marketwatch.com', searchParam: 'q', icon: 'finance', description: 'Stock market data and financial news' },
+  
+  // Sports & Entertainment
+  { name: 'ESPN', domain: 'espn.com', searchParam: 'q', icon: 'sports', description: 'Sports news, scores, and highlights' },
+  { name: 'Sports Illustrated', domain: 'si.com', searchParam: 'q', icon: 'sports', description: 'Sports news and analysis' },
+  { name: 'TMZ', domain: 'tmz.com', searchParam: 'q', icon: 'entertainment', description: 'Celebrity news and gossip' },
+  { name: 'E! Online', domain: 'eonline.com', searchParam: 'q', icon: 'entertainment', description: 'Entertainment news and celebrities' },
+  { name: 'Variety', domain: 'variety.com', searchParam: 'q', icon: 'entertainment', description: 'Entertainment industry news' },
+  { name: 'Pitchfork', domain: 'pitchfork.com', searchParam: 'q', icon: 'entertainment', description: 'Music reviews and news' },
+  
+  // Search Engines
+  { name: 'Google', domain: 'google.com', searchParam: 'q', icon: 'search', description: 'Web search and information' },
+  { name: 'Bing', domain: 'bing.com', searchParam: 'q', icon: 'search', description: 'Microsoft web search' },
+  { name: 'DuckDuckGo', domain: 'duckduckgo.com', searchParam: 'q', icon: 'search', description: 'Private web search' },
+  { name: 'Yahoo', domain: 'search.yahoo.com', searchParam: 'p', icon: 'search', description: 'Web search and news' },
+]
+
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url)
   const query = searchParams.get('q')
@@ -78,7 +179,7 @@ export async function GET(request: Request) {
   const matchedPanel = !isAdult ? KNOWLEDGE_PANELS.find(p => queryLower.includes(p.keyword) || p.keyword.includes(queryLower)) : null
   const richResult = parseQueryForRichResults(query)
 
-  const results: { title: string; link: string; snippet: string; favicon?: string; domain?: string }[] = []
+  const results: { title: string; link: string; snippet: string; favicon?: string; domain?: string; icon?: string }[] = []
   const images: { title: string; link: string; thumbnail: string }[] = []
   let featuredSnippet: { title: string; link: string; snippet: string } | null = null
   let relatedQuestions: string[] = []
@@ -114,25 +215,13 @@ export async function GET(request: Request) {
   }
 
   try {
-    // 1. Add direct links to popular sites as results
-    const popularSites = [
-      { name: 'YouTube', domain: 'youtube.com', searchParam: 'search_query', snippet: 'Watch videos about' },
-      { name: 'Reddit', domain: 'reddit.com', searchParam: 'q', snippet: 'Discussions about' },
-      { name: 'Twitter/X', domain: 'twitter.com', searchParam: 'q', snippet: 'See what people say about' },
-      { name: 'Wikipedia', domain: 'wikipedia.org', searchParam: 'search', snippet: 'Encyclopedia article about' },
-      { name: 'Amazon', domain: 'amazon.com', searchParam: 'k', snippet: 'Products related to' },
-      { name: 'GitHub', domain: 'github.com', searchParam: 'q', snippet: 'Code and projects for' },
-      { name: 'Quora', domain: 'quora.com', searchParam: 'q', snippet: 'Questions and answers about' },
-      { name: 'News', domain: 'news.google.com', searchParam: 'q', snippet: 'Latest news about' },
-      { name: 'Stack Overflow', domain: 'stackoverflow.com', searchParam: 'q', snippet: 'Technical questions about' },
-      { name: 'TikTok', domain: 'tiktok.com', searchParam: 'q', snippet: 'Videos about' },
-    ]
-    
-    for (const site of popularSites) {
+    // 1. Add all search sources as results
+    for (const source of SEARCH_SOURCES) {
       results.push({
-        title: `${query} - ${site.name}`,
-        link: `https://www.${site.domain}/search?${site.searchParam}=${encodeURIComponent(query)}`,
-        snippet: `${site.snippet} ${query}`
+        title: `${source.name} - ${query}`,
+        link: `https://www.${source.domain}/search?${source.searchParam}=${encodeURIComponent(query)}`,
+        snippet: source.description,
+        icon: source.icon
       })
     }
 
@@ -196,7 +285,8 @@ export async function GET(request: Request) {
               results.push({
                 title: r.title,
                 link: r.url,
-                snippet: r.description || ''
+                snippet: r.description || '',
+                icon: 'web'
               })
             }
           }
@@ -211,53 +301,10 @@ export async function GET(request: Request) {
             })
           }
         }
-        
-        if (!wikiKnowledge && braveData.knowledge_panel) {
-          const kp = braveData.knowledge_panel
-          wikiKnowledge = {
-            title: kp.graph_metadata?.title || query,
-            description: kp.description || '',
-            image: kp.graph_metadata?.image,
-            facts: {}
-          }
-        }
       } catch {}
     }
 
-    // 4. Fallback: Try scraping Bing results
-    try {
-      const bingRes = await fetch(
-        `https://www.bing.com/search?q=${encodeURIComponent(query)}&format=rss`,
-        { headers: { 'User-Agent': 'Mozilla/5.0' } }
-      )
-      
-      if (bingRes.ok) {
-        const bingText = await bingRes.text()
-        // Simple parsing - look for URLs
-        const urlMatches = bingText.match(/https?:\/\/[^\s<>"{}|\\^`\[\]]+/gi) || []
-        const uniqueUrls = [...new Set(urlMatches)].filter(u => 
-          u.includes('.com') || u.includes('.org') || u.includes('.net') ||
-          u.includes('.io') || u.includes('.co') || u.includes('.gov') ||
-          u.includes('.edu')
-        ).slice(0, 20)
-        
-        for (const url of uniqueUrls) {
-          try {
-            const urlObj = new URL(url)
-            const exists = results.some(x => x.link === url)
-            if (!exists && !url.includes('bing.com') && !url.includes('microsoft.com')) {
-              results.push({
-                title: urlObj.hostname.replace('www.', ''),
-                link: url,
-                snippet: `Visit ${urlObj.hostname.replace('www.', '')}`
-              })
-            }
-          } catch {}
-        }
-      }
-    } catch {}
-
-    // 5. Get images from Wikipedia
+    // 4. Get images from Wikipedia
     if (images.length === 0 && !isAdult) {
       try {
         const imgRes = await fetch(
@@ -299,11 +346,11 @@ export async function GET(request: Request) {
       r.favicon = `https://www.google.com/s2/favicons?domain=${hostname}&sz=32`
       r.domain = hostname
       return true
-    }).slice(0, 30)
+    }).slice(0, 50)
 
     // AI Summary
     let aiSummary = null
-    const snippets = dedupedResults.slice(0, 5).map(r => r.snippet).filter(Boolean).join(' ')
+    const snippets = dedupedResults.slice(0, 10).map(r => r.snippet).filter(Boolean).join(' ')
     const aiPrompt = `About "${query}": ${snippets || wikiKnowledge?.description || ''}. Give a 2-3 sentence helpful answer. Sound natural.`
 
     if (process.env.GEMINI_API_KEY) {
@@ -314,7 +361,7 @@ export async function GET(request: Request) {
         )
         const aiData = await aiRes.json()
         if (aiData.candidates?.[0]?.content?.parts?.[0]?.text) {
-          aiSummary = { answer: aiData.candidates[0].content.parts[0].text, sources: dedupedResults.slice(0, 3).map(r => r.domain || '') }
+          aiSummary = { answer: aiData.candidates[0].content.parts[0].text, sources: dedupedResults.slice(0, 5).map(r => r.domain || '') }
         }
       } catch {}
     }
@@ -327,7 +374,7 @@ export async function GET(request: Request) {
         })
         const aiData = await aiRes.json()
         if (aiData.choices?.[0]?.message?.content) {
-          aiSummary = { answer: aiData.choices[0].message.content, sources: dedupedResults.slice(0, 3).map(r => r.domain || '') }
+          aiSummary = { answer: aiData.choices[0].message.content, sources: dedupedResults.slice(0, 5).map(r => r.domain || '') }
         }
       } catch {}
     }
