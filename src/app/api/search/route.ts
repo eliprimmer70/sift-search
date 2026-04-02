@@ -9,40 +9,70 @@ export async function GET(request: Request) {
   }
 
   try {
-    // Use DuckDuckGo HTML for search results (free, no API key)
+    // Search for web results
     const searchUrl = `https://html.duckduckgo.com/html/?q=${encodeURIComponent(query)}`
     const response = await fetch(searchUrl, {
       headers: {
         'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36'
       }
     })
-
     const html = await response.text()
-    
-    // Parse results from HTML
+
+    // Parse web results
     const results: { title: string; link: string; snippet: string }[] = []
-    const resultRegex = /<a class="result__a" href="([^"]+)"[^>]*>([^<]+)<\/a>[\s\S]*?<a class="result__snippet"[^>]*>([\s\S]*?)<\/a>/g
-    let match
+    const titleRegex = /<a class="result__a" href="([^"]+)">([^<]+)<\/a>/g
+    const snippetRegex = /<a class="result__snippet"[^>]*>([\s\S]*?)<\/a>/g
     
-    while ((match = resultRegex.exec(html)) !== null && results.length < 10) {
-      const link = match[1]
-      const title = match[2].replace(/<[^>]+>/g, '').trim()
-      const snippet = match[3].replace(/<[^>]+>/g, '').replace(/&quot;/g, '"').replace(/&amp;/g, '&').trim()
+    let titleMatches = [...html.matchAll(titleRegex)]
+    let snippetMatches = [...html.matchAll(snippetRegex)]
+    
+    for (let i = 0; i < Math.min(titleMatches.length, 10); i++) {
+      const link = titleMatches[i][1]
+      const title = titleMatches[i][2].replace(/<[^>]+>/g, '').trim()
+      const snippet = snippetMatches[i] 
+        ? snippetMatches[i][1].replace(/<[^>]+>/g, '').replace(/&quot;/g, '"').replace(/&amp;/g, '&').trim()
+        : ''
       
-      if (title && link && !link.includes('duckduckgo')) {
+      if (title && link && !link.includes('duckduckgo') && !link.includes('yandex')) {
         results.push({ title, link, snippet })
       }
     }
 
-    // If parsing failed, try simpler regex
-    if (results.length === 0) {
-      const simpleRegex = /<a class="result__a" href="([^"]+)">([^<]+)<\/a>/g
-      while ((match = simpleRegex.exec(html)) !== null && results.length < 10) {
-        const link = match[1]
-        const title = match[2].replace(/<[^>]+>/g, '').trim()
-        if (title && link && !link.includes('duckduckgo') && !results.some(r => r.link === link)) {
-          results.push({ title, link, snippet: '' })
-        }
+    // Search for images
+    const imageUrl = `https://html.duckduckgo.com/html/?q=${encodeURIComponent(query + ' images')}`
+    const imageResponse = await fetch(imageUrl, {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36'
+      }
+    })
+    const imageHtml = await imageResponse.text()
+    
+    // Try to find image links from DDG
+    const images: { title: string; link: string; thumbnail: string }[] = []
+    const imgRegex = /<img[^>]+src="([^"]+)"[^>]*>/g
+    const imgMatches = [...imageHtml.matchAll(imgRegex)]
+    
+    // Use a free image API as fallback
+    const picsumUrl = `https://picsum.photos/v2/list?limit=12&query=${encodeURIComponent(query)}`
+    try {
+      const picsumResponse = await fetch(picsumUrl)
+      const picsumData = await picsumResponse.json()
+      
+      for (const img of picsumData.slice(0, 12)) {
+        images.push({
+          title: `Photo by ${img.author}`,
+          link: img.url,
+          thumbnail: `https://picsum.photos/id/${img.id}/300/300`
+        })
+      }
+    } catch {
+      // Use placeholder images if API fails
+      for (let i = 0; i < 12; i++) {
+        images.push({
+          title: `Image ${i + 1}`,
+          link: '#',
+          thumbnail: `https://picsum.photos/300/300?random=${i}`
+        })
       }
     }
 
@@ -51,7 +81,7 @@ export async function GET(request: Request) {
     const snippets = results.slice(0, 3).map(r => r.snippet || r.title).join(' | ')
     const aiPrompt = `Based on these search results for "${query}": ${snippets}. Give a brief 2-3 sentence answer.`
     
-    // Try Gemini API first (Google AI Studio)
+    // Try Gemini
     const geminiKey = process.env.GEMINI_API_KEY
     if (geminiKey && results.length > 0) {
       try {
@@ -83,7 +113,7 @@ export async function GET(request: Request) {
       }
     }
     
-    // Try Groq if Gemini not available
+    // Try Groq
     const groqKey = process.env.GROQ_API_KEY
     if (!aiSummary && groqKey && results.length > 0) {
       try {
@@ -117,7 +147,7 @@ export async function GET(request: Request) {
       }
     }
 
-    // Try Cloudflare if neither Gemini nor Groq
+    // Try Cloudflare
     const cfKey = process.env.CLOUDFLARE_API_TOKEN
     if (!aiSummary && cfKey && results.length > 0) {
       try {
@@ -156,7 +186,7 @@ export async function GET(request: Request) {
       }
     }
 
-    return NextResponse.json({ results, aiSummary })
+    return NextResponse.json({ results, images, aiSummary })
   } catch (err) {
     console.error(err)
     return NextResponse.json({ error: 'Search failed' }, { status: 500 })

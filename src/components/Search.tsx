@@ -1,13 +1,17 @@
 'use client'
 
-import { useState, useRef, useEffect } from 'react'
-import { useRouter } from 'next/navigation'
+import { useState, useRef } from 'react'
 
 interface SearchResult {
   title: string
   link: string
   snippet: string
-  source?: string
+}
+
+interface ImageResult {
+  title: string
+  link: string
+  thumbnail: string
 }
 
 interface AISummary {
@@ -18,10 +22,11 @@ interface AISummary {
 export default function Search() {
   const [query, setQuery] = useState('')
   const [results, setResults] = useState<SearchResult[]>([])
+  const [images, setImages] = useState<ImageResult[]>([])
   const [aiSummary, setAiSummary] = useState<AISummary | null>(null)
   const [loading, setLoading] = useState(false)
   const [showResults, setShowResults] = useState(false)
-  const [selectedTab, setSelectedTab] = useState<'all' | 'ai' | 'web' | 'news'>('all')
+  const [selectedTab, setSelectedTab] = useState<'all' | 'images'>('all')
   const inputRef = useRef<HTMLInputElement>(null)
 
   const search = async (q: string) => {
@@ -29,6 +34,7 @@ export default function Search() {
     setLoading(true)
     setShowResults(true)
     setResults([])
+    setImages([])
     setAiSummary(null)
 
     try {
@@ -37,6 +43,9 @@ export default function Search() {
       
       if (data.results) {
         setResults(data.results)
+      }
+      if (data.images) {
+        setImages(data.images)
       }
       if (data.aiSummary) {
         setAiSummary(data.aiSummary)
@@ -57,23 +66,24 @@ export default function Search() {
   const clearSearch = () => {
     setQuery('')
     setResults([])
+    setImages([])
     setAiSummary(null)
     setShowResults(false)
     inputRef.current?.focus()
   }
 
   const quickLinks = [
-    { name: 'YouTube', icon: '▶', query: 'site:youtube.com' },
-    { name: 'Wikipedia', icon: 'W', query: 'site:wikipedia.org' },
-    { name: 'GitHub', icon: '⬡', query: 'site:github.com' },
-    { name: 'Twitter', icon: '𝕏', query: 'site:twitter.com' },
+    { name: 'YouTube', query: 'site:youtube.com' },
+    { name: 'Wikipedia', query: 'site:wikipedia.org' },
+    { name: 'GitHub', query: 'site:github.com' },
+    { name: 'Amazon', query: 'site:amazon.com' },
   ]
 
   return (
     <div className="min-h-screen bg-black text-white font-sans">
-      <div className="max-w-4xl mx-auto px-4 py-16">
+      <div className="max-w-4xl mx-auto px-4">
         {!showResults ? (
-          <div className="flex flex-col items-center justify-center min-h-[80vh]">
+          <div className="flex flex-col items-center justify-center min-h-screen">
             <h1 className="text-6xl font-bold mb-2 tracking-tight">Sift</h1>
             <p className="text-zinc-500 mb-12 text-lg">Search with clarity</p>
             
@@ -123,21 +133,14 @@ export default function Search() {
                   }}
                   className="flex items-center gap-2 px-4 py-2 bg-zinc-900 border border-zinc-800 rounded-full text-sm text-zinc-400 hover:bg-zinc-800 hover:text-white transition-colors"
                 >
-                  <span>{link.icon}</span>
                   {link.name}
                 </button>
               ))}
             </div>
-
-            <div className="mt-16 text-zinc-600 text-sm">
-              <span>Press </span>
-              <kbd className="px-2 py-1 bg-zinc-900 border border-zinc-800 rounded text-xs">Enter</kbd>
-              <span> to search</span>
-            </div>
           </div>
         ) : (
-          <div>
-            <div className="sticky top-0 bg-black pb-4 mb-6 border-b border-zinc-900">
+          <div className="py-8">
+            <div className="sticky top-0 bg-black pb-4 mb-6">
               <div className="flex items-center justify-between mb-4">
                 <button onClick={clearSearch} className="text-2xl font-bold hover:text-zinc-300 transition-colors">Sift</button>
                 <div className="flex items-center gap-3">
@@ -175,19 +178,26 @@ export default function Search() {
               </div>
 
               <div className="flex gap-1">
-                {(['all', 'ai', 'web', 'news'] as const).map((tab) => (
-                  <button
-                    key={tab}
-                    onClick={() => setSelectedTab(tab)}
-                    className={`px-4 py-2 rounded-full text-sm font-medium transition-colors ${
-                      selectedTab === tab 
-                        ? 'bg-zinc-800 text-white' 
-                        : 'text-zinc-500 hover:text-white'
-                    }`}
-                  >
-                    {tab.charAt(0).toUpperCase() + tab.slice(1)}
-                  </button>
-                ))}
+                <button
+                  onClick={() => setSelectedTab('all')}
+                  className={`px-4 py-2 rounded-full text-sm font-medium transition-colors ${
+                    selectedTab === 'all' 
+                      ? 'bg-zinc-800 text-white' 
+                      : 'text-zinc-500 hover:text-white'
+                  }`}
+                >
+                  All
+                </button>
+                <button
+                  onClick={() => setSelectedTab('images')}
+                  className={`px-4 py-2 rounded-full text-sm font-medium transition-colors ${
+                    selectedTab === 'images' 
+                      ? 'bg-zinc-800 text-white' 
+                      : 'text-zinc-500 hover:text-white'
+                  }`}
+                >
+                  Images
+                </button>
               </div>
             </div>
 
@@ -197,7 +207,7 @@ export default function Search() {
               </div>
             ) : (
               <div className="space-y-6">
-                {aiSummary && selectedTab !== 'web' && selectedTab !== 'news' && (
+                {aiSummary && (
                   <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-6">
                     <div className="flex items-center gap-2 mb-4">
                       <div className="w-8 h-8 bg-gradient-to-br from-purple-500 to-pink-500 rounded-lg flex items-center justify-center">
@@ -218,24 +228,63 @@ export default function Search() {
                   </div>
                 )}
 
-                {(selectedTab === 'all' || selectedTab === 'web') && (
+                {selectedTab === 'all' && (
                   <div className="space-y-4">
                     <div className="text-zinc-500 text-sm">
                       About {results.length} results
                     </div>
-                    {results.map((result, i) => (
-                      <a
-                        key={i}
-                        href={result.link}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="block group"
-                      >
-                        <div className="text-sm text-zinc-500 mb-1 truncate">{result.link}</div>
-                        <h3 className="text-lg text-blue-500 group-hover:underline mb-1">{result.title}</h3>
-                        <p className="text-zinc-400 leading-relaxed">{result.snippet}</p>
-                      </a>
-                    ))}
+                    {results.length === 0 ? (
+                      <p className="text-zinc-500">No results found. Try a different search.</p>
+                    ) : (
+                      results.map((result, i) => (
+                        <a
+                          key={i}
+                          href={result.link}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="block group"
+                        >
+                          <div className="text-sm text-zinc-500 mb-1 truncate">{result.link}</div>
+                          <h3 className="text-lg text-blue-500 group-hover:underline mb-1">{result.title}</h3>
+                          <p className="text-zinc-400 leading-relaxed">{result.snippet}</p>
+                        </a>
+                      ))
+                    )}
+                  </div>
+                )}
+
+                {selectedTab === 'images' && (
+                  <div>
+                    <div className="text-zinc-500 text-sm mb-4">
+                      About {images.length} images
+                    </div>
+                    {images.length === 0 ? (
+                      <p className="text-zinc-500">No images found. Try searching for something with images.</p>
+                    ) : (
+                      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                        {images.map((img, i) => (
+                          <a
+                            key={i}
+                            href={img.link}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="group"
+                          >
+                            <div className="aspect-square bg-zinc-900 rounded-lg overflow-hidden mb-2">
+                              <img 
+                                src={img.thumbnail} 
+                                alt={img.title}
+                                className="w-full h-full object-cover group-hover:opacity-80 transition-opacity"
+                                onError={(e) => {
+                                  (e.target as HTMLImageElement).src = 'data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><rect fill="%23222" width="100" height="100"/><text x="50" y="50" text-anchor="middle" dy=".3em" fill="%23666" font-size="12">No Image</text></svg>'
+                                }}
+                              />
+                            </div>
+                            <p className="text-sm text-zinc-400 truncate">{img.title}</p>
+                          </a>
+                        ))}
+                      </div>
+                    )}
                   </div>
                 )}
               </div>
