@@ -366,11 +366,11 @@ export default function Search() {
             ) : (
               <div className="space-y-6">
                 {/* Wiki Knowledge Panel (Google-style info box) */}
-                {(wikiKnowledge || knowledgePanel) && selectedTab !== 'images' && selectedTab !== 'admin' && (
+                {(wikiKnowledge || knowledgePanel) && selectedTab === 'all' && (
                   <div className="border border-zinc-700 rounded-lg overflow-hidden mb-6">
                     <div className="bg-zinc-800 px-4 py-2 border-b border-zinc-700">
                       <span className="text-sm text-zinc-400">
-                        {knowledgePanel ? 'People also search for' : 'Wikipedia'}
+                        Wikipedia
                       </span>
                     </div>
                     <div className="flex flex-col md:flex-row">
@@ -425,7 +425,7 @@ export default function Search() {
                 )}
 
                 {/* Featured Snippet */}
-                {featuredSnippet && selectedTab !== 'images' && selectedTab !== 'admin' && (
+                {featuredSnippet && selectedTab === 'all' && (
                   <div className="bg-zinc-900/50 border border-zinc-800 rounded-lg p-4 mb-6">
                     <p className="text-white text-lg leading-relaxed mb-2">{featuredSnippet.snippet}</p>
                     <button 
@@ -438,7 +438,7 @@ export default function Search() {
                 )}
 
                 {/* AI Summary */}
-                {aiSummary && selectedTab !== 'images' && selectedTab !== 'admin' && !featuredSnippet && (
+                {aiSummary && selectedTab === 'all' && !featuredSnippet && (
                   <div className="mb-6">
                     <p className="text-zinc-300 leading-relaxed">{aiSummary.answer}</p>
                     {aiSummary.sources.length > 0 && (
@@ -453,7 +453,7 @@ export default function Search() {
                 )}
 
                 {/* Related Questions */}
-                {relatedQuestions.length > 0 && selectedTab !== 'images' && selectedTab !== 'admin' && (
+                {relatedQuestions.length > 0 && selectedTab === 'all' && (
                   <div className="mb-6">
                     <h3 className="text-white font-medium mb-3">People also ask</h3>
                     <div className="space-y-2">
