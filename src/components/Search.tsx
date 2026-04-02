@@ -86,6 +86,7 @@ export default function Search() {
 
   const search = async (q: string, page: number = 1) => {
     if (!q.trim()) return
+    setQuery(q) // Update the search input
     setLoading(true)
     setShowResults(true)
     setCurrentPage(page)
