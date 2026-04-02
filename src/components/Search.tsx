@@ -71,7 +71,7 @@ export default function Search() {
   const [loadingArticle, setLoadingArticle] = useState(false)
   const [loading, setLoading] = useState(false)
   const [showResults, setShowResults] = useState(false)
-  const [selectedTab, setSelectedTab] = useState<'all' | 'images' | 'admin'>('all')
+  const [selectedTab, setSelectedTab] = useState<'all' | 'images' | 'news' | 'admin'>('all')
   const [currentPage, setCurrentPage] = useState(1)
   const inputRef = useRef<HTMLInputElement>(null)
 
@@ -96,6 +96,20 @@ export default function Search() {
       localStorage.setItem('sift_panels', JSON.stringify(defaultPanels))
     }
   }, [])
+
+  // Load news when switching to news tab
+  useEffect(() => {
+    if (selectedTab === 'news' && query && newsArticles.length === 0) {
+      setLoadingNews(true)
+      fetch(`/api/news?q=${encodeURIComponent(query)}`)
+        .then(res => res.json())
+        .then(data => {
+          if (data.articles) setNewsArticles(data.articles)
+        })
+        .catch(console.error)
+        .finally(() => setLoadingNews(false))
+    }
+  }, [selectedTab, query, newsArticles.length])
 
   const search = async (q: string, page: number = 1) => {
     if (!q.trim()) return
@@ -327,6 +341,14 @@ export default function Search() {
                   Images
                 </button>
                 <button
+                  onClick={() => setSelectedTab('news')}
+                  className={`px-4 py-2 rounded-full text-sm font-medium transition-colors ${
+                    selectedTab === 'news' ? 'bg-zinc-800 text-white' : 'text-zinc-500 hover:text-white'
+                  }`}
+                >
+                  News
+                </button>
+                <button
                   onClick={() => setSelectedTab('admin')}
                   className={`px-4 py-2 rounded-full text-sm font-medium transition-colors ${
                     selectedTab === 'admin' ? 'bg-zinc-800 text-white' : 'text-zinc-500 hover:text-white'
@@ -448,15 +470,13 @@ export default function Search() {
                   </div>
                 )}
 
-                {/* News Section */}
-                {(loadingNews ? Array(3).fill(null) : newsArticles).length > 0 && selectedTab !== 'images' && selectedTab !== 'admin' && (
-                  <div className="mb-6">
-                    <h3 className="text-white font-medium mb-4 flex items-center gap-2">
-                      <svg className="w-5 h-5 text-orange-500" fill="currentColor" viewBox="0 0 24 24">
-                        <path d="M19 5v14H5V5h14m0-2H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm-5 14H7v-2h7v2zm3-4H7v-2h10v2zm0-4H7V7h10v2z"/>
-                      </svg>
-                      Latest News
-                    </h3>
+                {selectedTab === 'admin' && <AdminPanel />}
+                
+                {selectedTab === 'news' && (
+                  <div className="space-y-4">
+                    <div className="text-zinc-500 text-sm">
+                      {query ? `Latest news about "${query}"` : 'Search for news'}
+                    </div>
                     
                     {selectedArticle ? (
                       <div className="bg-zinc-900 border border-zinc-800 rounded-xl overflow-hidden">
@@ -468,7 +488,7 @@ export default function Search() {
                             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7"/>
                             </svg>
-                            Back to news
+                            Back
                           </button>
                           <button 
                             onClick={() => window.open(newsArticles.find(a => a.title === selectedArticle.title)?.link, '_blank')}
@@ -478,12 +498,12 @@ export default function Search() {
                           </button>
                         </div>
                         {selectedArticle.image && (
-                          <img src={selectedArticle.image} alt="" className="w-full h-48 object-cover" />
+                          <img src={selectedArticle.image} alt="" className="w-full h-64 object-cover" />
                         )}
                         <div className="p-6">
                           {loadingArticle ? (
                             <div className="flex items-center justify-center py-8">
-                              <div className="w-6 h-6 border-2 border-zinc-600 border-t-white rounded-full animate-spin"/>
+                              <div className="w-8 h-8 border-2 border-zinc-600 border-t-white rounded-full animate-spin"/>
                             </div>
                           ) : (
                             <>
@@ -493,39 +513,48 @@ export default function Search() {
                           )}
                         </div>
                       </div>
+                    ) : !query ? (
+                      <div className="text-center py-12 text-zinc-500">
+                        <svg className="w-16 h-16 mx-auto mb-4 text-zinc-700" fill="currentColor" viewBox="0 0 24 24">
+                          <path d="M19 5v14H5V5h14m0-2H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm-5 14H7v-2h7v2zm3-4H7v-2h10v2zm0-4H7V7h10v2z"/>
+                        </svg>
+                        <p>Enter a search term to find news</p>
+                      </div>
+                    ) : loadingNews ? (
+                      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                        {Array(6).fill(null).map((_, i) => (
+                          <div key={i} className="bg-zinc-900/50 border border-zinc-800 rounded-xl p-4 animate-pulse">
+                            <div className="bg-zinc-800 h-40 rounded-lg mb-4"/>
+                            <div className="bg-zinc-800 h-4 w-3/4 rounded mb-2"/>
+                            <div className="bg-zinc-800 h-3 w-1/2 rounded"/>
+                          </div>
+                        ))}
+                      </div>
+                    ) : newsArticles.length === 0 ? (
+                      <div className="text-center py-12 text-zinc-500">
+                        <p>No news found. Try a different search.</p>
+                      </div>
                     ) : (
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        {loadingNews ? (
-                          Array(4).fill(null).map((_, i) => (
-                            <div key={i} className="bg-zinc-900/50 border border-zinc-800 rounded-lg p-4 animate-pulse">
-                              <div className="bg-zinc-800 h-32 rounded mb-3"/>
-                              <div className="bg-zinc-800 h-4 w-3/4 rounded mb-2"/>
-                              <div className="bg-zinc-800 h-3 w-1/2 rounded"/>
-                            </div>
-                          ))
-                        ) : (
-                          newsArticles.slice(0, 8).map((article, i) => (
-                            <button
-                              key={i}
-                              onClick={() => loadArticle(article)}
-                              className="bg-zinc-900/50 border border-zinc-800 rounded-lg p-4 text-left hover:bg-zinc-900 transition-colors"
-                            >
-                              {article.image && (
-                                <img src={article.image} alt="" className="w-full h-32 object-cover rounded-lg mb-3" />
-                              )}
-                              <h4 className="text-white font-medium mb-1 line-clamp-2">{article.title}</h4>
-                              <p className="text-zinc-500 text-xs mb-2">{article.source} • {article.date ? new Date(article.date).toLocaleDateString() : ''}</p>
-                              <p className="text-zinc-400 text-sm line-clamp-2">{article.snippet}</p>
-                            </button>
-                          ))
-                        )}
+                      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                        {newsArticles.map((article, i) => (
+                          <button
+                            key={i}
+                            onClick={() => loadArticle(article)}
+                            className="bg-zinc-900/50 border border-zinc-800 rounded-xl p-4 text-left hover:bg-zinc-900 transition-colors group"
+                          >
+                            {article.image && (
+                              <img src={article.image} alt="" className="w-full h-40 object-cover rounded-lg mb-4 group-hover:opacity-90 transition-opacity" />
+                            )}
+                            <h4 className="text-white font-medium mb-2 line-clamp-2">{article.title}</h4>
+                            <p className="text-zinc-500 text-xs mb-2">{article.source} • {article.date ? new Date(article.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : ''}</p>
+                            <p className="text-zinc-400 text-sm line-clamp-3">{article.snippet}</p>
+                          </button>
+                        ))}
                       </div>
                     )}
                   </div>
                 )}
 
-                {selectedTab === 'admin' && <AdminPanel />}
-                
                 {selectedTab === 'all' && (
                   <div className="space-y-4">
                     <div className="text-zinc-500 text-sm">
