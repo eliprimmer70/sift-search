@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useRef } from 'react'
+import { useState, useRef, useEffect } from 'react'
 
 interface SearchResult {
   title: string
@@ -28,6 +28,12 @@ export default function Search() {
   const [showResults, setShowResults] = useState(false)
   const [selectedTab, setSelectedTab] = useState<'all' | 'images'>('all')
   const inputRef = useRef<HTMLInputElement>(null)
+
+  useEffect(() => {
+    if (inputRef.current) {
+      inputRef.current.focus()
+    }
+  }, [])
 
   const search = async (q: string) => {
     if (!q.trim()) return
@@ -69,7 +75,7 @@ export default function Search() {
     setImages([])
     setAiSummary(null)
     setShowResults(false)
-    inputRef.current?.focus()
+    setTimeout(() => inputRef.current?.focus(), 100)
   }
 
   return (
@@ -94,7 +100,6 @@ export default function Search() {
                   onKeyDown={handleKeyDown}
                   placeholder="Search the web..."
                   className="w-full bg-transparent py-4 px-4 text-lg outline-none placeholder:text-zinc-600"
-                  autoFocus
                 />
                 {query && (
                   <button 
@@ -264,7 +269,7 @@ export default function Search() {
                       About {images.length} images
                     </div>
                     {images.length === 0 ? (
-                      <p className="text-zinc-500">No images found. Try searching for something with images.</p>
+                      <p className="text-zinc-500">No images found.</p>
                     ) : (
                       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                         {images.map((img, i) => (
@@ -280,9 +285,7 @@ export default function Search() {
                                 src={img.thumbnail} 
                                 alt={img.title}
                                 className="w-full h-full object-cover group-hover:opacity-80 transition-opacity"
-                                onError={(e) => {
-                                  (e.target as HTMLImageElement).src = 'data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><rect fill="%23222" width="100" height="100"/><text x="50" y="50" text-anchor="middle" dy=".3em" fill="%23666" font-size="12">No Image</text></svg>'
-                                }}
+                                loading="lazy"
                               />
                             </div>
                             <p className="text-sm text-zinc-400 truncate">{img.title}</p>
