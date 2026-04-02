@@ -3,9 +3,11 @@ import type { CapacitorConfig } from '@capacitor/cli';
 const config: CapacitorConfig = {
   appId: 'com.sift.app',
   appName: 'Sift',
-  webDir: '.next/server/app',
+  webDir: 'out',
   server: {
-    androidScheme: 'https'
+    androidScheme: 'https',
+    url: 'https://sift-search.vercel.app',
+    cleartext: false,
   },
   plugins: {
     SplashScreen: {

@@ -76,9 +76,6 @@ export default function Search() {
   const inputRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
-    if (inputRef.current) {
-      inputRef.current.focus()
-    }
     // Initialize knowledge panels on app load
     const stored = localStorage.getItem('sift_panels')
     if (!stored || JSON.parse(stored).length === 0) {
@@ -96,6 +93,13 @@ export default function Search() {
       localStorage.setItem('sift_panels', JSON.stringify(defaultPanels))
     }
   }, [])
+
+  // Focus input only on landing page
+  useEffect(() => {
+    if (!showResults && inputRef.current) {
+      inputRef.current.focus()
+    }
+  }, [showResults])
 
   // Load news when switching to news tab
   useEffect(() => {
@@ -211,7 +215,6 @@ export default function Search() {
     setAiSummary(null)
     setShowResults(false)
     setCurrentPage(1)
-    setTimeout(() => inputRef.current?.focus(), 100)
   }
 
   const totalPages = Math.ceil(results.length / RESULTS_PER_PAGE)
@@ -299,8 +302,8 @@ export default function Search() {
           </div>
         ) : (
           <div className="py-8">
-            <div className="sticky top-0 bg-black pb-4 mb-6 z-50">
-              <div className="flex items-center justify-between mb-4">
+            <div className="sticky top-0 bg-black pb-4 mb-6 z-50 pt-safe">
+              <div className="flex items-center justify-between mb-4 pt-[env(safe-area-inset-top)]">
                 <button onClick={clearSearch} className="text-2xl font-bold hover:text-zinc-300 transition-colors">Sift</button>
                 <div className="flex items-center gap-3">
                   <div className="relative w-full max-w-xl">
