@@ -9,74 +9,46 @@ export async function GET(request: Request) {
   }
 
   try {
-    // Use DuckDuckGo lite for better parsing
-    const searchUrl = `https://lite.duckduckgo.com/50x/?q=${encodeURIComponent(query)}`
+    // Try Bing search
+    const searchUrl = `https://www.bing.com/search?q=${encodeURIComponent(query)}`
     const response = await fetch(searchUrl, {
       headers: {
-        'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36'
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
       }
     })
     const html = await response.text()
 
-    // Parse results - look for result links and snippets
+    // Parse Bing results
     const results: { title: string; link: string; snippet: string }[] = []
     
-    // Match result links
-    const linkMatches = html.match(/<a class="result__a" href="([^"]+)"[^>]*>([^<]+)<\/a>/g) || []
+    // Bing result pattern
+    const bingRegex = /<li class="b_algo"[\s\S]*?<h2[^>]*>([\s\S]*?)<\/h2>[\s\S]*?<div class="b_caption"[\s\S]*?<p>([\s\S]*?)<\/p>/g
     
-    // Match snippets
-    const snippetMatches = html.match(/<a class="result__snippet"[^>]*>([^<]+)<\/a>/g) || []
-    
-    // Extract data
-    for (let i = 0; i < Math.min(linkMatches.length, 10); i++) {
-      const linkMatch = linkMatches[i].match(/href="([^"]+)"/)
-      const titleMatch = linkMatches[i].match(/>([^<]+)<\/a>/)
+    let match
+    while ((match = bingRegex.exec(html)) !== null && results.length < 10) {
+      const titleMatch = match[1].match(/<a[^>]*>([^<]+)<\/a>/)
+      const urlMatch = match[1].match(/href="([^"]+)"/)
+      const snippet = match[2].replace(/<[^>]+>/g, '').trim()
       
-      if (linkMatch && titleMatch) {
-        const link = linkMatch[1]
+      if (titleMatch && urlMatch) {
         const title = titleMatch[1].replace(/<[^>]+>/g, '').trim()
+        const link = urlMatch[1]
         
-        let snippet = ''
-        if (snippetMatches[i]) {
-          snippet = snippetMatches[i].replace(/<[^>]+>/g, '').replace(/&quot;/g, '"').replace(/&amp;/g, '&').trim()
-        }
-        
-        if (title && link && !link.includes('duckduckgo') && !link.includes('yandex')) {
+        if (title && link && !link.includes('microsoft') && !link.includes('bing')) {
           results.push({ title, link, snippet })
         }
       }
     }
 
-    // If still no results, try regex approach on full HTML
+    // Fallback: simpler regex for Bing
     if (results.length === 0) {
-      const allLinks = html.match(/<a[^>]+href="(https?:\/\/[^"]+)"[^>]*>([^<]+)<\/a>/g) || []
-      const seen = new Set()
-      
-      for (const linkHtml of allLinks) {
-        if (results.length >= 10) break
+      const simpleTitleRegex = /<h2[^>]*>[\s\S]*?<a[^>]*href="([^"]+)"[^>]*>([^<]+)<\/a>/g
+      while ((match = simpleTitleRegex.exec(html)) !== null && results.length < 10) {
+        const link = match[1]
+        const title = match[2].replace(/<[^>]+>/g, '').trim()
         
-        const hrefMatch = linkHtml.match(/href="(https?:\/\/[^"]+)"/)
-        const textMatch = linkHtml.match(/>([^<]+)<\/a>/)
-        
-        if (hrefMatch && textMatch) {
-          const link = hrefMatch[1]
-          const title = textMatch[1].replace(/<[^>]+>/g, '').trim()
-          
-          // Filter out navigation links and internal links
-          if (
-            title && 
-            link && 
-            link.startsWith('http') &&
-            !link.includes('duckduckgo') &&
-            !link.includes('yandex.com') &&
-            !seen.has(link) &&
-            title.length > 10 &&
-            !title.includes('About') &&
-            !title.includes('Privacy')
-          ) {
-            seen.add(link)
-            results.push({ title, link, snippet: '' })
-          }
+        if (title && link && link.startsWith('http') && !link.includes('bing.com') && !link.includes('microsoft')) {
+          results.push({ title, link, snippet: '' })
         }
       }
     }
