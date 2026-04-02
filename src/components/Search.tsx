@@ -14,19 +14,33 @@ interface ImageResult {
   thumbnail: string
 }
 
+interface KnowledgePanel {
+  id: string
+  keyword: string
+  title: string
+  subtitle: string
+  description: string
+  image: string
+  facts: string[]
+}
+
 interface AISummary {
   answer: string
   sources: string[]
 }
 
+const RESULTS_PER_PAGE = 10
+
 export default function Search() {
   const [query, setQuery] = useState('')
   const [results, setResults] = useState<SearchResult[]>([])
   const [images, setImages] = useState<ImageResult[]>([])
+  const [knowledgePanel, setKnowledgePanel] = useState<KnowledgePanel | null>(null)
   const [aiSummary, setAiSummary] = useState<AISummary | null>(null)
   const [loading, setLoading] = useState(false)
   const [showResults, setShowResults] = useState(false)
-  const [selectedTab, setSelectedTab] = useState<'all' | 'images'>('all')
+  const [selectedTab, setSelectedTab] = useState<'all' | 'images' | 'admin'>('all')
+  const [currentPage, setCurrentPage] = useState(1)
   const inputRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
@@ -35,16 +49,23 @@ export default function Search() {
     }
   }, [])
 
-  const search = async (q: string) => {
+  const search = async (q: string, page: number = 1) => {
     if (!q.trim()) return
     setLoading(true)
     setShowResults(true)
+    setCurrentPage(page)
     setResults([])
     setImages([])
+    setKnowledgePanel(null)
     setAiSummary(null)
 
+    const stored = localStorage.getItem('sift_panels')
+    const panels: KnowledgePanel[] = stored ? JSON.parse(stored) : []
+    const queryLower = q.toLowerCase()
+    const matchedPanel = panels.find(p => queryLower.includes(p.keyword) || p.keyword.includes(queryLower))
+
     try {
-      const res = await fetch(`/api/search?q=${encodeURIComponent(q)}`)
+      const res = await fetch(`/api/search?q=${encodeURIComponent(q)}&page=${page}`)
       const data = await res.json()
       
       if (data.results) {
@@ -53,7 +74,10 @@ export default function Search() {
       if (data.images) {
         setImages(data.images)
       }
-      if (data.aiSummary) {
+      if (matchedPanel && page === 1) {
+        setKnowledgePanel(matchedPanel)
+      }
+      if (data.aiSummary && page === 1) {
         setAiSummary(data.aiSummary)
       }
     } catch (err) {
@@ -73,14 +97,35 @@ export default function Search() {
     setQuery('')
     setResults([])
     setImages([])
+    setKnowledgePanel(null)
     setAiSummary(null)
     setShowResults(false)
+    setCurrentPage(1)
     setTimeout(() => inputRef.current?.focus(), 100)
+  }
+
+  const totalPages = Math.ceil(results.length / RESULTS_PER_PAGE)
+  const paginatedResults = results.slice((currentPage - 1) * RESULTS_PER_PAGE, currentPage * RESULTS_PER_PAGE)
+
+  const getPageNumbers = () => {
+    const pages: (number | string)[] = []
+    if (totalPages <= 7) {
+      for (let i = 1; i <= totalPages; i++) pages.push(i)
+    } else {
+      pages.push(1)
+      if (currentPage > 3) pages.push('...')
+      for (let i = Math.max(2, currentPage - 1); i <= Math.min(totalPages - 1, currentPage + 1); i++) {
+        pages.push(i)
+      }
+      if (currentPage < totalPages - 2) pages.push('...')
+      pages.push(totalPages)
+    }
+    return pages
   }
 
   return (
     <div className="min-h-screen bg-black text-white font-sans">
-      <div className="max-w-4xl mx-auto px-4">
+      <div className="max-w-5xl mx-auto px-4">
         {!showResults ? (
           <div className="flex flex-col items-center justify-center min-h-screen">
             <h1 className="text-6xl font-bold mb-2 tracking-tight">Sift</h1>
@@ -140,17 +185,11 @@ export default function Search() {
               >
                 GitHub
               </button>
-              <button
-                onClick={() => search('site:amazon.com')}
-                className="px-4 py-2 bg-zinc-900 border border-zinc-800 rounded-full text-sm text-zinc-400 hover:bg-zinc-800 hover:text-white transition-colors"
-              >
-                Amazon
-              </button>
             </div>
           </div>
         ) : (
           <div className="py-8">
-            <div className="sticky top-0 bg-black pb-4 mb-6">
+            <div className="sticky top-0 bg-black pb-4 mb-6 z-50">
               <div className="flex items-center justify-between mb-4">
                 <button onClick={clearSearch} className="text-2xl font-bold hover:text-zinc-300 transition-colors">Sift</button>
                 <div className="flex items-center gap-3">
@@ -191,9 +230,7 @@ export default function Search() {
                 <button
                   onClick={() => setSelectedTab('all')}
                   className={`px-4 py-2 rounded-full text-sm font-medium transition-colors ${
-                    selectedTab === 'all' 
-                      ? 'bg-zinc-800 text-white' 
-                      : 'text-zinc-500 hover:text-white'
+                    selectedTab === 'all' ? 'bg-zinc-800 text-white' : 'text-zinc-500 hover:text-white'
                   }`}
                 >
                   All
@@ -201,12 +238,18 @@ export default function Search() {
                 <button
                   onClick={() => setSelectedTab('images')}
                   className={`px-4 py-2 rounded-full text-sm font-medium transition-colors ${
-                    selectedTab === 'images' 
-                      ? 'bg-zinc-800 text-white' 
-                      : 'text-zinc-500 hover:text-white'
+                    selectedTab === 'images' ? 'bg-zinc-800 text-white' : 'text-zinc-500 hover:text-white'
                   }`}
                 >
                   Images
+                </button>
+                <button
+                  onClick={() => setSelectedTab('admin')}
+                  className={`px-4 py-2 rounded-full text-sm font-medium transition-colors ${
+                    selectedTab === 'admin' ? 'bg-zinc-800 text-white' : 'text-zinc-500 hover:text-white'
+                  }`}
+                >
+                  Admin
                 </button>
               </div>
             </div>
@@ -217,48 +260,111 @@ export default function Search() {
               </div>
             ) : (
               <div className="space-y-6">
-                {aiSummary && (
-                  <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-6">
+                {knowledgePanel && (
+                  <div className="flex gap-6 bg-zinc-900 border border-zinc-800 rounded-2xl p-6">
+                    {knowledgePanel.image && (
+                      <img 
+                        src={knowledgePanel.image} 
+                        alt={knowledgePanel.title}
+                        className="w-40 h-40 object-cover rounded-xl"
+                      />
+                    )}
+                    <div className="flex-1">
+                      <h2 className="text-2xl font-bold mb-1">{knowledgePanel.title}</h2>
+                      <p className="text-zinc-400 mb-4">{knowledgePanel.subtitle}</p>
+                      <p className="text-zinc-300 mb-4">{knowledgePanel.description}</p>
+                      <div className="flex flex-wrap gap-2">
+                        {knowledgePanel.facts.map((fact, i) => (
+                          <span key={i} className="text-xs bg-zinc-800 px-3 py-1 rounded-full">{fact}</span>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {aiSummary && selectedTab !== 'images' && selectedTab !== 'admin' && (
+                  <div className="bg-gradient-to-r from-purple-900/50 to-pink-900/50 border border-purple-800/50 rounded-2xl p-6">
                     <div className="flex items-center gap-2 mb-4">
-                      <div className="w-8 h-8 bg-gradient-to-br from-purple-500 to-pink-500 rounded-lg flex items-center justify-center">
+                      <div className="w-8 h-8 bg-purple-500 rounded-lg flex items-center justify-center">
                         <svg className="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 10V3L4 14h7v7l9-11h-7z"/>
                         </svg>
                       </div>
-                      <span className="font-semibold">AI Summary</span>
+                      <span className="font-semibold">AI Answer</span>
                     </div>
-                    <p className="text-zinc-300 text-lg leading-relaxed mb-4">{aiSummary.answer}</p>
+                    <p className="text-zinc-200 text-lg leading-relaxed mb-4">{aiSummary.answer}</p>
                     {aiSummary.sources.length > 0 && (
                       <div className="flex flex-wrap gap-2">
                         {aiSummary.sources.slice(0, 3).map((source, i) => (
-                          <span key={i} className="text-xs text-zinc-500 bg-zinc-800 px-2 py-1 rounded">{source}</span>
+                          <span key={i} className="text-xs text-zinc-400 bg-black/30 px-2 py-1 rounded">{source}</span>
                         ))}
                       </div>
                     )}
                   </div>
                 )}
 
+                {selectedTab === 'admin' && <AdminPanel />}
+                
                 {selectedTab === 'all' && (
                   <div className="space-y-4">
                     <div className="text-zinc-500 text-sm">
                       About {results.length} results
                     </div>
                     {results.length === 0 ? (
-                      <p className="text-zinc-500">No results found. Try a different search.</p>
+                      <p className="text-zinc-500">No results found.</p>
                     ) : (
-                      results.map((result, i) => (
-                        <a
-                          key={i}
-                          href={result.link}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="block group"
-                        >
-                          <div className="text-sm text-zinc-500 mb-1 truncate">{result.link}</div>
-                          <h3 className="text-lg text-blue-500 group-hover:underline mb-1">{result.title}</h3>
-                          <p className="text-zinc-400 leading-relaxed">{result.snippet}</p>
-                        </a>
-                      ))
+                      <>
+                        {paginatedResults.map((result, i) => (
+                          <a
+                            key={i}
+                            href={result.link}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="block group"
+                          >
+                            <h3 className="text-xl text-blue-500 group-hover:underline mb-1">{result.title}</h3>
+                            <p className="text-zinc-400 leading-relaxed">{result.snippet}</p>
+                          </a>
+                        ))}
+                        
+                        {totalPages > 1 && (
+                          <div className="flex items-center justify-center gap-2 mt-8 pt-8 border-t border-zinc-800">
+                            <button
+                              onClick={() => search(query, currentPage - 1)}
+                              disabled={currentPage === 1}
+                              className="px-4 py-2 text-sm text-zinc-400 hover:text-white disabled:opacity-50 disabled:cursor-not-allowed"
+                            >
+                              Previous
+                            </button>
+                            <div className="flex items-center gap-1">
+                              {getPageNumbers().map((page, i) => (
+                                typeof page === 'number' ? (
+                                  <button
+                                    key={i}
+                                    onClick={() => search(query, page)}
+                                    className={`w-10 h-10 text-sm rounded-full ${
+                                      page === currentPage
+                                        ? 'bg-zinc-800 text-white'
+                                        : 'text-zinc-400 hover:text-white hover:bg-zinc-900'
+                                    }`}
+                                  >
+                                    {page}
+                                  </button>
+                                ) : (
+                                  <span key={i} className="px-2 text-zinc-600">...</span>
+                                )
+                              ))}
+                            </div>
+                            <button
+                              onClick={() => search(query, currentPage + 1)}
+                              disabled={currentPage === totalPages}
+                              className="px-4 py-2 text-sm text-zinc-400 hover:text-white disabled:opacity-50 disabled:cursor-not-allowed"
+                            >
+                              Next
+                            </button>
+                          </div>
+                        )}
+                      </>
                     )}
                   </div>
                 )}
@@ -268,36 +374,208 @@ export default function Search() {
                     <div className="text-zinc-500 text-sm mb-4">
                       About {images.length} images
                     </div>
-                    {images.length === 0 ? (
-                      <p className="text-zinc-500">No images found.</p>
-                    ) : (
-                      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                        {images.map((img, i) => (
-                          <a
-                            key={i}
-                            href={img.link}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="group"
-                          >
-                            <div className="aspect-square bg-zinc-900 rounded-lg overflow-hidden mb-2">
-                              <img 
-                                src={img.thumbnail} 
-                                alt={img.title}
-                                className="w-full h-full object-cover group-hover:opacity-80 transition-opacity"
-                                loading="lazy"
-                              />
-                            </div>
-                            <p className="text-sm text-zinc-400 truncate">{img.title}</p>
-                          </a>
-                        ))}
-                      </div>
-                    )}
+                    <div className="grid grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
+                      {images.map((img, i) => (
+                        <a
+                          key={i}
+                          href={img.link}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="group"
+                        >
+                          <div className="aspect-square bg-zinc-900 rounded-xl overflow-hidden">
+                            <img 
+                              src={img.thumbnail} 
+                              alt={img.title}
+                              className="w-full h-full object-cover group-hover:opacity-80 transition-opacity"
+                              loading="lazy"
+                            />
+                          </div>
+                          <p className="text-xs text-zinc-500 mt-2 truncate">{img.title}</p>
+                        </a>
+                      ))}
+                    </div>
                   </div>
                 )}
               </div>
             )}
           </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
+function AdminPanel() {
+  const [keyword, setKeyword] = useState('')
+  const [title, setTitle] = useState('')
+  const [subtitle, setSubtitle] = useState('')
+  const [description, setDescription] = useState('')
+  const [image, setImage] = useState('')
+  const [facts, setFacts] = useState('')
+  
+  const getInitialPanels = (): KnowledgePanel[] => {
+    if (typeof window === 'undefined') return []
+    const stored = localStorage.getItem('sift_panels')
+    const existingPanels: KnowledgePanel[] = stored ? JSON.parse(stored) : []
+    
+    if (existingPanels.length === 0) {
+      const defaultPanels: KnowledgePanel[] = [
+        {
+          id: '1',
+          keyword: 'ariana grande',
+          title: 'Ariana Grande',
+          subtitle: 'American Singer, Songwriter & Actress',
+          description: 'Ariana Grande-Butera is an American singer, songwriter, and actress. Known for her four-octave vocal range, she has received numerous accolades, including two Grammy Awards, an American Music Award, and a BAFTA.',
+          image: 'https://upload.wikimedia.org/wikipedia/commons/thumb/e/e9/Ariana_Grande_2018.jpg/440px-Ariana_Grande_2018.jpg',
+          facts: ['Born: June 26, 1993', 'Nationality: American', 'Net Worth: $200M+', 'Albums: 7 studio albums', 'Instagram: 380M+ followers']
+        }
+      ]
+      localStorage.setItem('sift_panels', JSON.stringify(defaultPanels))
+      return defaultPanels
+    }
+    return existingPanels
+  }
+  
+  const [panels, setPanels] = useState<KnowledgePanel[]>(getInitialPanels)
+
+  const savePanel = () => {
+    if (!keyword || !title) return
+    
+    const newPanel: KnowledgePanel = {
+      id: Date.now().toString(),
+      keyword: keyword.toLowerCase(),
+      title,
+      subtitle,
+      description,
+      image,
+      facts: facts.split(',').map(f => f.trim()).filter(Boolean)
+    }
+    
+    const updated = [newPanel, ...panels.filter(p => p.keyword !== keyword)]
+    setPanels(updated)
+    localStorage.setItem('sift_panels', JSON.stringify(updated))
+    
+    // Reset form
+    setKeyword('')
+    setTitle('')
+    setSubtitle('')
+    setDescription('')
+    setImage('')
+    setFacts('')
+  }
+
+  const deletePanel = (id: string) => {
+    const updated = panels.filter(p => p.id !== id)
+    setPanels(updated)
+    localStorage.setItem('sift_panels', JSON.stringify(updated))
+  }
+
+  return (
+    <div className="space-y-6">
+      <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-6">
+        <h2 className="text-xl font-bold mb-4">Create Knowledge Panel</h2>
+        <p className="text-zinc-400 text-sm mb-6">Create info cards that appear when users search for specific keywords.</p>
+        
+        <div className="grid grid-cols-2 gap-4 mb-4">
+          <div>
+            <label className="block text-sm text-zinc-400 mb-2">Keyword (e.g., &quot;Ariana Grande&quot;)</label>
+            <input
+              type="text"
+              value={keyword}
+              onChange={(e) => setKeyword(e.target.value)}
+              placeholder="Search keyword"
+              className="w-full bg-black border border-zinc-700 rounded-lg px-4 py-3 outline-none focus:border-zinc-500"
+            />
+          </div>
+          <div>
+            <label className="block text-sm text-zinc-400 mb-2">Title</label>
+            <input
+              type="text"
+              value={title}
+              onChange={(e) => setTitle(e.target.value)}
+              placeholder="Name or title"
+              className="w-full bg-black border border-zinc-700 rounded-lg px-4 py-3 outline-none focus:border-zinc-500"
+            />
+          </div>
+          <div>
+            <label className="block text-sm text-zinc-400 mb-2">Subtitle</label>
+            <input
+              type="text"
+              value={subtitle}
+              onChange={(e) => setSubtitle(e.target.value)}
+              placeholder="Profession, nationality, etc."
+              className="w-full bg-black border border-zinc-700 rounded-lg px-4 py-3 outline-none focus:border-zinc-500"
+            />
+          </div>
+          <div>
+            <label className="block text-sm text-zinc-400 mb-2">Image URL</label>
+            <input
+              type="text"
+              value={image}
+              onChange={(e) => setImage(e.target.value)}
+              placeholder="https://..."
+              className="w-full bg-black border border-zinc-700 rounded-lg px-4 py-3 outline-none focus:border-zinc-500"
+            />
+          </div>
+        </div>
+        
+        <div className="mb-4">
+          <label className="block text-sm text-zinc-400 mb-2">Description</label>
+          <textarea
+            value={description}
+            onChange={(e) => setDescription(e.target.value)}
+            placeholder="Brief description..."
+            rows={3}
+            className="w-full bg-black border border-zinc-700 rounded-lg px-4 py-3 outline-none focus:border-zinc-500 resize-none"
+          />
+        </div>
+        
+        <div className="mb-6">
+          <label className="block text-sm text-zinc-400 mb-2">Facts (comma separated)</label>
+          <input
+            type="text"
+            value={facts}
+            onChange={(e) => setFacts(e.target.value)}
+            placeholder="Born 1993, Singer, Actress"
+            className="w-full bg-black border border-zinc-700 rounded-lg px-4 py-3 outline-none focus:border-zinc-500"
+          />
+        </div>
+        
+        <button
+          onClick={savePanel}
+          className="px-6 py-3 bg-white text-black font-semibold rounded-full hover:bg-zinc-200 transition-colors"
+        >
+          Create Panel
+        </button>
+      </div>
+
+      <div className="space-y-4">
+        <h3 className="text-lg font-semibold">Active Panels ({panels.length})</h3>
+        {panels.length === 0 ? (
+          <p className="text-zinc-500">No panels created yet.</p>
+        ) : (
+          panels.map((panel) => (
+            <div key={panel.id} className="bg-zinc-900 border border-zinc-800 rounded-xl p-4 flex gap-4">
+              {panel.image && (
+                <img src={panel.image} alt={panel.title} className="w-20 h-20 object-cover rounded-lg" />
+              )}
+              <div className="flex-1">
+                <div className="flex justify-between">
+                  <div>
+                    <h4 className="font-semibold">{panel.title}</h4>
+                    <p className="text-sm text-zinc-400">Keyword: &quot;{panel.keyword}&quot;</p>
+                  </div>
+                  <button
+                    onClick={() => deletePanel(panel.id)}
+                    className="text-red-500 hover:text-red-400 text-sm"
+                  >
+                    Delete
+                  </button>
+                </div>
+              </div>
+            </div>
+          ))
         )}
       </div>
     </div>
